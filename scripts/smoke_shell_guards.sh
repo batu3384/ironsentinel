@@ -182,7 +182,7 @@ expect_failure "AEGIS_RELEASE_PRIVATE_KEY_B64 is required" \
   env AEGIS_RELEASE_ROOT="$PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-signing
 
 expect_failure "GITHUB_RUN_ID is required" \
-  env AEGIS_RELEASE_ROOT="$PRECHECK_REPO" GITHUB_ACTIONS=true GITHUB_REPOSITORY=batuhanyuksel/security GITHUB_SERVER_URL=https://github.com \
+  env -u GITHUB_RUN_ID AEGIS_RELEASE_ROOT="$PRECHECK_REPO" GITHUB_ACTIONS=true GITHUB_REPOSITORY=batuhanyuksel/security GITHUB_SERVER_URL=https://github.com \
   /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
 
 echo "[smoke] validating release artifact preflight"
