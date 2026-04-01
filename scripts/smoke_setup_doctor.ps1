@@ -40,9 +40,11 @@ try {
             Write-Error "[smoke] runtime doctor failed without expected diagnostics`n$content"
         }
         Write-Host "[smoke] runtime doctor reported an expected readiness failure on this machine"
+        $global:LASTEXITCODE = 0
     }
     else {
         Write-Host "[smoke] runtime doctor passed"
+        $global:LASTEXITCODE = 0
     }
 
     Write-Host "[smoke] smoke setup/doctor flow completed"

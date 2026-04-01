@@ -54,7 +54,8 @@ expect_failure "Release version must look like vX.Y.Z" bash "$ROOT/scripts/relea
 expect_failure "Missing value for --dir" bash "$ROOT/scripts/release_artifact_preflight.sh" --dir
 EMPTY_BIN="$TMP_DIR/empty-bin"
 mkdir -p "$EMPTY_BIN"
-expect_failure "Requested container engine not found: docker" env PATH="$EMPTY_BIN:/usr/bin:/bin" /bin/bash "$ROOT/scripts/build_scanner_image.sh" --engine docker
+ln -s /usr/bin/dirname "$EMPTY_BIN/dirname"
+expect_failure "Requested container engine not found: docker" env PATH="$EMPTY_BIN" /bin/bash "$ROOT/scripts/build_scanner_image.sh" --engine docker
 
 echo "[smoke] validating package_release temp cleanup on build failure"
 FAKE_BIN="$TMP_DIR/fake-bin"

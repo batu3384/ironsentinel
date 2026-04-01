@@ -1,7 +1,6 @@
 package store
 
 import (
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -84,14 +83,4 @@ func TestFindingTriageOverlaysFindingFields(t *testing.T) {
 	if items[0].Owner != "sec-team" {
 		t.Fatalf("unexpected owner: %s", items[0].Owner)
 	}
-}
-
-func indexExists(t *testing.T, db *sql.DB, name string) bool {
-	t.Helper()
-
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&count); err != nil {
-		t.Fatalf("lookup index %s: %v", name, err)
-	}
-	return count > 0
 }
