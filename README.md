@@ -10,6 +10,7 @@
   <img alt="Reports" src="https://img.shields.io/badge/Reports-SARIF%20%7C%20CSV%20%7C%20HTML-0b7285?style=flat-square">
   <img alt="Language" src="https://img.shields.io/badge/Language-EN%20%2F%20TR-1d4ed8?style=flat-square">
   <img alt="Mode" src="https://img.shields.io/badge/Workflow-Local--first-111827?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-166534?style=flat-square">
 </p>
 
 <p align="center">
@@ -210,3 +211,7 @@ For the full command surface, run:
 ironsentinel --help
 ironsentinel <command> --help
 ```
+
+## License
+
+IronSentinel is available under the [MIT License](LICENSE).
