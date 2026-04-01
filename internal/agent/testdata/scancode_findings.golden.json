@@ -1,0 +1,17 @@
+[
+  {
+    "id": "run-4-f000",
+    "scanId": "run-4",
+    "projectId": "prj-1",
+    "category": "compliance",
+    "ruleId": "scancode.restricted_license",
+    "title": "Restricted license expression detected: AGPL-3.0-or-later",
+    "severity": "high",
+    "confidence": 0.76,
+    "reachability": "repository",
+    "fingerprint": "40aeeb425c175da4",
+    "remediation": "Review dependency redistribution terms and align package intake with the approved license policy.",
+    "location": "vendor/libfoo/LICENSE",
+    "module": "scancode"
+  }
+]

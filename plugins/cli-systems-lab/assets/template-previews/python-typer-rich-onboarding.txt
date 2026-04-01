@@ -1,0 +1,7 @@
+Orbit Desk onboarding
+Choose the workspace you want to activate first.
+
+Workspace: default
+Validating local toolchain...
+Saved profile for default
+Next command: python app.py doctor

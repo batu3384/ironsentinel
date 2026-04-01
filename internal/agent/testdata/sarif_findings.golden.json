@@ -1,0 +1,18 @@
+[
+  {
+    "id": "run-9-f000",
+    "scanId": "run-9",
+    "projectId": "prj-1",
+    "category": "sast",
+    "ruleId": "go/sql-injection",
+    "title": "User input reaches a SQL query sink.",
+    "severity": "critical",
+    "confidence": 0.78,
+    "reachability": "possible",
+    "fingerprint": "sarif-fp-1",
+    "evidenceRef": "https://codeql.github.com/docs/",
+    "remediation": "Validate user-controlled query parameters.",
+    "location": "internal/db/query.go",
+    "module": "codeql"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "run-1-f000",
+    "scanId": "run-1",
+    "projectId": "prj-1",
+    "category": "sca",
+    "ruleId": "CVE-2026-0001",
+    "title": "CVE-2026-0001 affects openssl@3.0.0",
+    "severity": "high",
+    "confidence": 0.8,
+    "reachability": "possible",
+    "fingerprint": "a9c1c46440f386e9",
+    "evidenceRef": "https://example.test/cve",
+    "remediation": "Upgrade or remove the impacted package and verify the compiled artifact no longer carries the vulnerable component.",
+    "location": "dist/app",
+    "module": "grype"
+  }
+]

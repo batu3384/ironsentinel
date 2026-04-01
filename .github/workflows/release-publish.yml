@@ -1,0 +1,54 @@
+name: Release Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Resolve release version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Package signed release artifacts
+        env:
+          AEGIS_RELEASE_PRIVATE_KEY_B64: ${{ secrets.AEGIS_RELEASE_PRIVATE_KEY_B64 }}
+        run: |
+          bash scripts/release_publish_preflight.sh --version "${{ steps.version.outputs.value }}" --require-signing --require-tag
+          bash scripts/package_release.sh --version "${{ steps.version.outputs.value }}" --sign
+      - name: Verify signed release manifest
+        run: |
+          bash scripts/release_publish_preflight.sh --version "${{ steps.version.outputs.value }}" --require-tag
+          go run ./cmd/releasectl verify --dir "dist/${{ steps.version.outputs.value }}" --lock scanner-bundle.lock.json --require-signature --require-attestation --require-external-attestation --require-clean-source
+      - name: Validate release artifact set
+        run: |
+          bash scripts/release_artifact_preflight.sh --dir "dist/${{ steps.version.outputs.value }}" --require-signing --require-external-attestation
+      - name: Generate release notes
+        run: |
+          go run ./cmd/releasectl notes --dir "dist/${{ steps.version.outputs.value }}" --lock scanner-bundle.lock.json --out "$RUNNER_TEMP/release-notes.md"
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.value }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          files: dist/${{ steps.version.outputs.value }}/*

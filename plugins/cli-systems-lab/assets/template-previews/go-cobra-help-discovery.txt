@@ -1,0 +1,11 @@
+signal-forge keeps the top operator tasks visible and plain-output safe.
+
+Top tasks:
+  signal-forge doctor        Validate local prerequisites
+  signal-forge init          Create the first project profile
+  signal-forge scan          Start the main workflow
+
+Examples:
+signal-forge doctor
+signal-forge init --project demo
+signal-forge scan --target ./repo

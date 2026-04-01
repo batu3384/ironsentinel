@@ -1,0 +1,99 @@
+                                                                                                                                                                                         
+  ███  ████    ███   █   █   ████  █████  █   █  █████  ███  █   █  █████  █                                      ╭────────────────────────────────────────────╮                         
+   █   █   █  █   █  ██  █  █      █      ██  █    █     █   ██  █  █      █                                      │                                            │                         
+   █   ████   █   █  █ █ █   ███   ████   █ █ █    █     █   █ █ █  ████   █                                      │ Sentinel mesh                              │                         
+   █   █  █   █   █  █  ██      █  █      █  ██    █     █   █  ██  █      █                                      │                                            │                         
+   █   █   █  █   █  █   █      █  █      █   █    █     █   █   █  █      █                                      │ [###] SNTL-01 PERIMETER                    │                         
+  ███  █   █   ███   █   █  ████   █████  █   █    █    ███  █   █  █████  █████                                  │   maps repository surface, workflows, and  │                         
+   LOCAL-FIRST  EN/TR READY  TRUSTED RUNTIME  EVIDENCE-SEALED                                                     │ attack paths                               │                         
+  IRONSENTINEL                                                                                                    │ [##-] SNTL-02 HUNTER                       │                         
+  Fullscreen operations deck for runs, findings, runtime trust, and evidence. | UI mode: Standard                 │   sweeps code, secrets, dependencies, and  │                         
+  Operator-grade local AppSec command deck                                                                        │ suspicious scripts                         │                         
+                                                                                                                  │ [#--] SNTL-03 KEEPER                       │                         
+                                                                                                                  │   seals evidence, runtime trust, and       │                         
+                                                                                                                  │ release integrity                          │                         
+                                                                                                                  │                                            │                         
+                                                                                                                  │ Command deck                               │                         
+                                                                                                                  │                                            │                         
+                                                                                                                  │ • Local-first mission fabric with queue,   │                         
+                                                                                                                  │ daemon, and hardened runtime paths.        │                         
+                                                                                                                  │ • Fullscreen operator deck with bilingual  │                         
+                                                                                                                  │ guidance and live telemetry.               │                         
+                                                                                                                  │ • Evidence-first reporting, debrief        │                         
+                                                                                                                  │ handoff, exports, and integrity checks.    │                         
+                                                                                                                  │ • Safe, deep, active, and compliance-      │                         
+                                                                                                                  │ driven profiles from one command surface.  │                         
+                                                                                                                  │                                            │                         
+                                                                                                                  ╰────────────────────────────────────────────╯                         
+  ╭──────────────────────────────────────╮╭──────────────────────────────────────╮╭──────────────────────────────────────╮╭──────────────────────────────────────╮                       
+  │                                      ││                                      ││                                      ││                                      │                       
+  │ Portfolio                            ││ Risk posture                         ││ Queue overview                       ││ Scanner bundle status                │                       
+  │ 1 Projects                           ││ 0 Critical                           ││ 0 Queued                             ││ SUPPORTED                            │                       
+  │ 1 recent runs                        ││ 0 High                               ││ 0 Running                            ││ 0 Canceled                           │                       
+  │                                      ││                                      ││                                      ││                                      │                       
+  ╰──────────────────────────────────────╯╰──────────────────────────────────────╯╰──────────────────────────────────────╯╰──────────────────────────────────────╯                       
+   1 Overview  2 Recent runs  3 Findings explorer  4 Scanner bundle status                                                                                                               
+                                                                                                                                                                                         
+  ╭─────────────────────────────────────────────────────╮  ╭───────────────────────────────────────────────────────────────────────────────────────────────────╮                         
+  │                                                     │  │                                                                                                   │                         
+  │ Mission brief                                       │  │ ╭────────────────────────────────────────────────╮╭────────────────────────────────────────────── │                         
+  │ Status: CLEAN                                       │  │ ──╮                                                                                               │                         
+  │ Trendline: % | Total findings 0                     │  │ │                                                ││                                               │                         
+  │ Projects: 1 | Recent runs: 1                        │  │ │                                                                                                 │                         
+  │ Queued: 0 | Running: 0                              │  │ │ Mission brief                                  ││ Queue brief                                   │                         
+  │ Canceled: 0 | Open: 0                               │  │ │                                                                                                 │                         
+  │                                                     │  │ │ CLEAN                                          ││ 0 queued / 0 running                          │                         
+  │ Threat pressure                                     │  │ │                                                                                                 │                         
+  │ Critical: 0 | High: 0                               │  │ │ % | Total findings 0                           ││ 0 canceled                                    │                         
+  │ Attack chain: 0 | KEV-linked: 0                     │  │ │                                                                                                 │                         
+  │ Priority: 0.0                                       │  │ │                                                ││                                               │                         
+  │                                                     │  │ │                                                                                                 │                         
+  │ Trust signal                                        │  │ ╰────────────────────────────────────────────────╯╰────────────────────────────────────────────── │                         
+  │ Available scanners: 0 | Version drift: 0            │  │ ──╯                                                                                               │                         
+  │ Missing scanners: 0 | Failed tool verification: 0   │  │ ╭────────────────────────────────────────────────╮╭────────────────────────────────────────────── │                         
+  │                                                     │  │ ──╮                                                                                               │                         
+  ╰─────────────────────────────────────────────────────╯  │ │                                                ││                                               │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │ Trust signal                                   ││ Threat pressure                               │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │ 0 available scanners / 0 version drift         ││ 0 findings                                    │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │ 0 missing scanners / 0 failed tool             ││ Open 0 | Investigating 0 | Fixed 0            │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │ verification                                   ││                                               │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │                                                                                                 │                         
+                                                           │ │╰────────────────────────────────────────────────╯                                               │                         
+                                                           │ ╰────────────────────────────────────────────────╯                                                │                         
+                                                           │                                                                                                   │                         
+                                                           │ Next steps                                                                                        │                         
+                                                           │ Export a shareable report or open the console for guided operations.                              │                         
+                                                           │                                                                                                   │                         
+                                                           │ Hot findings                                                                                      │                         
+                                                           │ No active findings across registered projects.                                                    │                         
+                                                           │                                                                                                   │                         
+                                                           │ Control plane                                                                                     │                         
+                                                           │ Daemon state: Idle                                                                                │                         
+                                                           │ Daemon PID: 0                                                                                     │                         
+                                                           │ Last heartbeat: -                                                                                 │                         
+                                                           │ Effective isolation: LOCAL                                                                        │                         
+                                                           │                                                                                                   │                         
+                                                           │ Queue overview                                                                                    │                         
+                                                           │ Queued: 0                                                                                         │                         
+                                                           │ Running: 0                                                                                        │                         
+                                                           │ Canceled: 0                                                                                       │                         
+                                                           │                                                                                                   │                         
+                                                           │ Active queue                                                                                      │                         
+                                                           │ No queued or running runs.                                                                        │                         
+                                                           │                                                                                                   │                         
+                                                           │ Actions                                                                                           │                         
+                                                           │ d: drain queued runs once                                                                         │                         
+                                                           │                                                                                                   │                         
+                                                           │ Trendline                                                                                         │                         
+                                                           │ % | Total findings 0                                                                              │                         
+                                                           │                                                                                                   │                         
+                                                           ╰───────────────────────────────────────────────────────────────────────────────────────────────────╯                         
+                                                                                                                                                                                         
+  Keys: 1-4 switch tabs, tab/shift+tab rotate, up/down move, pgup/pgdown page, home/end jump, m cycle UI mode, r refresh, d drain queued runs once, q quit. Auto refresh runs every 2s.  
+  Mission telemetry is synchronized.                                                                                                                                                     
+                                                                                                                                                                                         

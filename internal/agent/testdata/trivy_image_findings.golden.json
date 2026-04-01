@@ -1,0 +1,18 @@
+[
+  {
+    "id": "run-5-f000",
+    "scanId": "run-5",
+    "projectId": "prj-1",
+    "category": "container",
+    "ruleId": "CVE-2026-9999",
+    "title": "BusyBox privilege escalation",
+    "severity": "critical",
+    "confidence": 0.79,
+    "reachability": "image",
+    "fingerprint": "bac6280d85e1542f",
+    "evidenceRef": "https://example.test/trivy/cve-2026-9999",
+    "remediation": "Rebuild the container image on top of a patched base layer and republish the signed artifact.",
+    "location": "ghcr.io/acme/api:latest (alpine 3.18)",
+    "module": "trivy-image"
+  }
+]

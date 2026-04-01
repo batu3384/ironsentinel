@@ -1,0 +1,7 @@
+Watch Tower operator cockpit
+
+> Review the active workspace
+  Validate local dependencies
+  Start the first scan
+
+q quit | j/k move | plain fallback outside TTY

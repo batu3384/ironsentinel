@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "generatedAt": "2026-03-17T00:00:00Z",
+  "signing": {
+    "type": "ed25519",
+    "signer": "ironsentinel-release-root",
+    "publicKey": "OxBpGWTPTQmIR0OBYW6c8y3p2ii0Um3/ZO0JTqJhoDI=",
+    "publicKeyFingerprint": "ccacf4d37d6f2a9a"
+  },
+  "trustedAssets": [
+    {
+      "name": "local-installer-posix",
+      "kind": "installer",
+      "path": "scripts/install_scanners.sh",
+      "sha256": "e25c93bf8380625c04d0bcd60748134b4ec87c91b22c9827480f758b3213efee",
+      "signature": {
+        "value": "3VLMBWZTb08/L0IyBSXaVDsFD4RlE1KfxfYdZ7DwpEWyEk6UOtWQuQysQpZh8mKD8TMBoikG9eKkXUvCMsqJCg==",
+        "signer": "ironsentinel-release-root"
+      }
+    },
+    {
+      "name": "local-installer-windows",
+      "kind": "installer",
+      "path": "scripts/install_scanners.ps1",
+      "sha256": "83a31feaafdf759f8effc74c15fd32df02118357f39e4dc81ae00149b4bf8bf6",
+      "signature": {
+        "value": "wQ36DgiEa6+cFRE9XIU+IaKKzsl6IjM/cmZZDC9/MqTmSJEBJMqlB4WD4fOCVuDA1eLW/7e9ADhJpRQ9fbGzDA==",
+        "signer": "ironsentinel-release-root"
+      }
+    },
+    {
+      "name": "image-builder-posix",
+      "kind": "builder",
+      "path": "scripts/build_scanner_image.sh",
+      "sha256": "0d781af9853501e6b58ae90cac3e1158c040a7e3b96ef4cd4d806c029047fc41",
+      "signature": {
+        "value": "mPKu5NOe+/GOr1e7Vg2/Z3AA/h4/j8D3NOBt9oD/9UkVOv/aA7CFyUVbUmPhUU4Xtg4Z8Eqiq5Eh56BNvbfTAg==",
+        "signer": "ironsentinel-release-root"
+      }
+    },
+    {
+      "name": "image-builder-windows",
+      "kind": "builder",
+      "path": "scripts/build_scanner_image.ps1",
+      "sha256": "2a85ab78508a6bfe19c5fb50ba1edc3501b9d45c8599ac4193d64702adf1ce45",
+      "signature": {
+        "value": "ofngdoHKIh7Snrfqf/WgATfh+yUiKf3KH6Zl3ZFDdkLk+Jp8/jwg4d7yJ79eblWGx2DkwCQ4a15+Ij8calVnDw==",
+        "signer": "ironsentinel-release-root"
+      }
+    },
+    {
+      "name": "scanner-containerfile",
+      "kind": "containerfile",
+      "path": "deploy/scanner-bundle.Containerfile",
+      "sha256": "4fc88370c75baac25a27efa0c1c1d2087cb9ef87cb31096d50ddcc6bf20f2e95",
+      "signature": {
+        "value": "DRqg8XlcHQBDqSKOYFh703fUHsGi/RGR7hCWkKveaiNaY06wSoezpCaecBWl8IgWRfdYGLp5kgMebsgAXdNzDQ==",
+        "signer": "ironsentinel-release-root"
+      }
+    }
+  ],
+  "channels": {
+    "active": [
+      {
+        "name": "nuclei",
+        "version": "3.4.10",
+        "source": "https://github.com/projectdiscovery/nuclei/releases/tag/v3.4.10",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/projectdiscovery/nuclei/archive/refs/tags/v3.4.10.tar.gz",
+          "algorithm": "sha256",
+          "digest": "d5604ef47d31abba42814876b637105f0b1e9b9167b79206aeeeb2935f102102"
+        }
+      },
+      {
+        "name": "zap",
+        "version": "2.16.1",
+        "source": "https://github.com/zaproxy/zaproxy/releases/tag/v2.16.1",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/zaproxy/zaproxy/archive/refs/tags/v2.16.1.tar.gz",
+          "algorithm": "sha256",
+          "digest": "84c7942006a86732876b2e0d56aa613a28c714907645c8c3540051765e929bf1"
+        }
+      }
+    ],
+    "deep": [
+      {
+        "name": "codeql",
+        "version": "2.23.3",
+        "source": "https://github.com/github/codeql-action/releases/tag/codeql-bundle-v2.23.3",
+        "checksums": {
+          "darwin/amd64": "4727d89174ae86bf7ee7bff76dce23a4c595d48979c38dce44739d21faee28b0",
+          "linux/amd64": "1df942da8d12541e1f7ca33030faf7b8f25be8177bc28afbff8cad6b2bb52bc0",
+          "windows/amd64": "b61142757e102b4f663d0bd89f57aea3d1646f796fda91f2a0fca3a64aff5528"
+        },
+        "signature": {},
+        "sourceIntegrity": {}
+      },
+      {
+        "name": "knip",
+        "version": "5.70.1",
+        "source": "https://www.npmjs.com/package/knip/v/5.70.1",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "npm-tarball",
+          "url": "https://registry.npmjs.org/knip/-/knip-5.70.1.tgz",
+          "algorithm": "sha512",
+          "digest": "b464633a2be41cf57e6285550f3d2829296f08063a774d3d32586e7ece18fbb55697f2b2d3bdfe29445cae030bcc9572e2992966fa3162edf0982d202bb5d2e6"
+        }
+      },
+      {
+        "name": "vulture",
+        "version": "2.14",
+        "source": "https://pypi.org/project/vulture/2.14/",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "pypi-sdist",
+          "url": "https://files.pythonhosted.org/packages/8e/25/925f35db758a0f9199113aaf61d703de891676b082bd7cf73ea01d6000f7/vulture-2.14.tar.gz",
+          "algorithm": "sha256",
+          "digest": "cb8277902a1138deeab796ec5bef7076a6e0248ca3607a3f3dee0b6d9e9b8415"
+        }
+      }
+    ],
+    "safe": [
+      {
+        "name": "checkov",
+        "version": "3.2.489",
+        "source": "https://pypi.org/project/checkov/3.2.489/",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "pypi-sdist",
+          "url": "https://files.pythonhosted.org/packages/6b/7a/e20e2cf4f10a9fa6f06b97b565bf1a4e079867538d4988b8ac5dc2c528aa/checkov-3.2.489.tar.gz",
+          "algorithm": "sha256",
+          "digest": "ca3d92c8b1c14405f00cdb9f2cea726f209b1967fcca2e9386800d33233da274"
+        }
+      },
+      {
+        "name": "clamav",
+        "version": "1.4.3",
+        "platformVersions": {
+          "darwin/arm64": "1.5.2"
+        },
+        "source": "https://docs.clamav.net/",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "http-tarball",
+          "url": "https://www.clamav.net/downloads/production/clamav-1.4.3.tar.gz",
+          "algorithm": "sha256",
+          "digest": "d874cabf3d4765b35b518ef535658a1e6ec74802006a1d613f9f124aa1343210"
+        }
+      },
+      {
+        "name": "gitleaks",
+        "version": "8.24.2",
+        "source": "https://github.com/gitleaks/gitleaks/releases/tag/v8.24.2",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/gitleaks/gitleaks/archive/refs/tags/v8.24.2.tar.gz",
+          "algorithm": "sha256",
+          "digest": "b6fd2641657de6349c7c5d36c658f6ba79305cfc5c0614a5fd5232c699a0753f"
+        }
+      },
+      {
+        "name": "govulncheck",
+        "version": "1.1.4",
+        "source": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "go-module-zip",
+          "url": "https://proxy.golang.org/golang.org/x/vuln/@v/v1.1.4.zip",
+          "algorithm": "sha256",
+          "digest": "115ff76fba8f73b27106eb2e59e3f30696f4f7faaeed55471b5b65c3994b503d"
+        }
+      },
+      {
+        "name": "grype",
+        "version": "0.94.0",
+        "source": "https://github.com/anchore/grype/releases/tag/v0.94.0",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/anchore/grype/archive/refs/tags/v0.94.0.tar.gz",
+          "algorithm": "sha256",
+          "digest": "d285dc8990f4ab5f8620858fbf4831520526cd8c705ebdf9c9c2cac63745d380"
+        }
+      },
+      {
+        "name": "osv-scanner",
+        "version": "2.2.2",
+        "source": "https://github.com/google/osv-scanner/releases/tag/v2.2.2",
+        "checksums": {
+          "darwin/amd64": "5c2a2e2a686e34c0674e0a463aa626467df5d9fba0ed06870a2eb684dc434de3",
+          "darwin/arm64": "f1e1cc84b6e365b79b874cb9028a4f74ac64666094b542f1eb196b10f44b505e",
+          "linux/amd64": "c799274b682e0437c802d4714a136ad09b39c65547c460049ba5358d28afa576",
+          "linux/arm64": "62004a8b3c84d5041e6565113cc98af17da8d5ef9ebd070d355f1522bcd1d383",
+          "windows/amd64": "5cce6a9b96b88d0620bfdb22da72497c444948e56c64d3508f054cded13fb49f",
+          "windows/arm64": "bb4d4a291cc9a2e0ee30cd2acf53ccae1c1d6ce1fe2e470ab0b88fb485d0ff2d"
+        },
+        "signature": {},
+        "sourceIntegrity": {}
+      },
+      {
+        "name": "semgrep",
+        "version": "1.119.0",
+        "source": "https://pypi.org/project/semgrep/1.119.0/",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "pypi-wheel",
+          "url": "https://files.pythonhosted.org/packages/a8/d4/3dbaa3dc32331e71ad0c0f0e754f4cc3a4095f06a5c5f74bc80f371f4fb5/semgrep-1.119.0-cp39.cp310.cp311.py39.py310.py311-none-macosx_10_14_x86_64.whl",
+          "algorithm": "sha256",
+          "digest": "f81b2e90d8338912e640f5d18492daebec6df7f1b348adb579239eba2604a47c"
+        }
+      },
+      {
+        "name": "staticcheck",
+        "version": "2025.1.1",
+        "source": "https://pkg.go.dev/honnef.co/go/tools/cmd/staticcheck",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/dominikh/go-tools/archive/refs/tags/2025.1.1.tar.gz",
+          "algorithm": "sha256",
+          "digest": "259aaf528e4d98e7d3652e283e8551cfdb98cd033a7c01003cd377c2444dd6de"
+        }
+      },
+      {
+        "name": "syft",
+        "version": "1.22.0",
+        "source": "https://github.com/anchore/syft/releases/tag/v1.22.0",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/anchore/syft/archive/refs/tags/v1.22.0.tar.gz",
+          "algorithm": "sha256",
+          "digest": "40f0780a72245e77c72c7ab196c7a55ddba16430e9b4a4e48cf4002b46ca4283"
+        }
+      },
+      {
+        "name": "trivy",
+        "version": "0.69.1",
+        "platformVersions": {
+          "darwin/arm64": "0.69.4"
+        },
+        "source": "https://github.com/aquasecurity/trivy/releases/tag/v0.69.1",
+        "signature": {},
+        "sourceIntegrity": {
+          "kind": "github-source-archive",
+          "url": "https://github.com/aquasecurity/trivy/archive/refs/tags/v0.69.1.tar.gz",
+          "algorithm": "sha256",
+          "digest": "997f7b744e93bd2faa9f0c2f86345ab142d50d42a6ed2b3a35dc8b65676355ee"
+        }
+      }
+    ]
+  }
+}

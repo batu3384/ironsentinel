@@ -1,0 +1,29 @@
+name: CLI Systems Lab Self Check
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "plugins/cli-systems-lab/**"
+      - ".github/workflows/cli-systems-lab-self-check.yml"
+  pull_request:
+    paths:
+      - "plugins/cli-systems-lab/**"
+      - ".github/workflows/cli-systems-lab-self-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run CLI Systems Lab self-check
+        run: bash plugins/cli-systems-lab/scripts/ci_self_check.sh

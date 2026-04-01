@@ -1,0 +1,20 @@
+{
+  "name": "__APP_SLUG__",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "__APP_SLUG__": "./bin/run.js"
+  },
+  "scripts": {
+    "start": "node ./bin/run.js dashboard"
+  },
+  "dependencies": {
+    "@oclif/core": "^4.0.0",
+    "ink": "^5.1.1",
+    "react": "^18.3.1"
+  },
+  "oclif": {
+    "commands": "./src/commands"
+  }
+}

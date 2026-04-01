@@ -1,0 +1,17 @@
+[
+  {
+    "id": "run-3-f000",
+    "scanId": "run-3",
+    "projectId": "prj-1",
+    "category": "compliance",
+    "ruleId": "licensee.restricted",
+    "title": "Repository license \"AGPL-3.0-only\" requires legal review",
+    "severity": "high",
+    "confidence": 0.8,
+    "reachability": "repository",
+    "fingerprint": "43387b5392548d4a",
+    "remediation": "Review license obligations, redistribution terms, and policy exceptions before release.",
+    "location": "LICENSE",
+    "module": "licensee"
+  }
+]

@@ -1,0 +1,87 @@
+name: Release Validation
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  pull_request:
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Run Go test suite
+        run: go test ./...
+      - name: Run internal coverage gate
+        run: bash scripts/coverage_gate.sh
+
+  quality-gates:
+    runs-on: ubuntu-latest
+    needs:
+      - go-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Run go vet
+        run: go vet ./...
+      - name: Run staticcheck
+        run: |
+          . ./scripts/go_tool_helpers.sh
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "$(require_go_tool staticcheck)" ./...
+      - name: Run golangci-lint
+        run: |
+          . ./scripts/go_tool_helpers.sh
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.3
+          "$(require_go_tool golangci-lint)" run --config .golangci.yml --concurrency 2 ./...
+      - name: Run self-scan
+        run: go run ./cmd/ironsentinel --lang en scan . --coverage core
+
+  host-runtime-validation:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Render runtime support matrix
+        run: go run ./cmd/ironsentinel runtime support --lang en --coverage premium
+      - name: Smoke setup + doctor (POSIX)
+        if: runner.os != 'Windows'
+        run: bash scripts/smoke_setup_doctor.sh
+      - name: Smoke setup + doctor (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/smoke_setup_doctor.ps1
+      - name: Smoke shell guards (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/smoke_shell_guards.ps1
+
+  release-matrix-build:
+    runs-on: ubuntu-latest
+    needs:
+      - go-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Validate release matrix builds
+        run: bash scripts/validate_release_matrix.sh
+      - name: Validate signed release smoke flow
+        run: bash scripts/smoke_signed_release.sh

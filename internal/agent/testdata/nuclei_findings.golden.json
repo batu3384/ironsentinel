@@ -1,0 +1,17 @@
+[
+  {
+    "id": "run-8-f000",
+    "scanId": "run-8",
+    "projectId": "prj-1",
+    "category": "dast",
+    "ruleId": "cves/2026/CVE-2026-9001",
+    "title": "Authentication bypass",
+    "severity": "critical",
+    "confidence": 0.68,
+    "reachability": "reachable",
+    "fingerprint": "7bb3984926a8190e",
+    "remediation": "Validate the finding against the staging target and apply the matching fix or compensating control.",
+    "location": "https://staging.example.test/login",
+    "module": "nuclei"
+  }
+]

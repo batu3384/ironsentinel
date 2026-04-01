@@ -1,0 +1,12 @@
+[project]
+name = "__APP_SLUG__"
+version = "0.1.0"
+description = "__APP_TITLE__ repair-flow starter"
+requires-python = ">=3.11"
+dependencies = [
+  "rich>=14.0.0",
+  "typer>=0.12.5",
+]
+
+[tool.ruff]
+line-length = 100

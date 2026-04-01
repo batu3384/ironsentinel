@@ -1,0 +1,6 @@
+runtime/
+dist/
+.git/
+node_modules/
+.DS_Store
+*.log

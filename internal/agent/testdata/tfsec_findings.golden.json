@@ -1,0 +1,17 @@
+[
+  {
+    "id": "run-2-f000",
+    "scanId": "run-2",
+    "projectId": "prj-1",
+    "category": "iac",
+    "ruleId": "AVD-AWS-0089",
+    "title": "Bucket versioning disabled",
+    "severity": "high",
+    "confidence": 0.79,
+    "reachability": "infrastructure",
+    "fingerprint": "c3bbfa08f21c4c3b",
+    "remediation": "Enable versioning",
+    "location": "main.tf",
+    "module": "tfsec"
+  }
+]

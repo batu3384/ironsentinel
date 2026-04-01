@@ -1,0 +1,106 @@
+[
+  {
+    "id": "go-cobra-bubbletea-onboarding",
+    "stack": "Go / Cobra / Bubble Tea",
+    "pattern": "Operator Cockpit",
+    "surface": "Full-screen TUI with plain fallback",
+    "previewAsset": "assets/template-previews/go-cobra-bubbletea-onboarding.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "onboarding console",
+      "operator cockpit",
+      "interactive setup boundary"
+    ]
+  },
+  {
+    "id": "go-cobra-help-discovery",
+    "stack": "Go / Cobra",
+    "pattern": "Command Discovery Board",
+    "surface": "Plain command help and grouped examples",
+    "previewAsset": "assets/template-previews/go-cobra-help-discovery.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "help cleanup",
+      "top-task grouping",
+      "command discovery"
+    ]
+  },
+  {
+    "id": "node-oclif-ink-dashboard",
+    "stack": "Node / oclif / Ink",
+    "pattern": "Operator Cockpit",
+    "surface": "Interactive dashboard with plain fallback",
+    "previewAsset": "assets/template-previews/node-oclif-ink-dashboard.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "operator dashboard",
+      "interactive console",
+      "keyboard-driven control surface"
+    ]
+  },
+  {
+    "id": "python-textual-console",
+    "stack": "Python / Textual",
+    "pattern": "Operator Cockpit",
+    "surface": "Full-screen Textual console with plain fallback",
+    "previewAsset": "assets/template-previews/python-textual-console.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "full-screen console",
+      "monitoring panel",
+      "multi-step operator loop"
+    ]
+  },
+  {
+    "id": "python-typer-rich-onboarding",
+    "stack": "Python / Typer / Rich",
+    "pattern": "Onboarding Runway",
+    "surface": "Guided prompt flow with plain fallback",
+    "previewAsset": "assets/template-previews/python-typer-rich-onboarding.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "first-run setup",
+      "doctor flow",
+      "guided onboarding"
+    ]
+  },
+  {
+    "id": "python-typer-repair-flow",
+    "stack": "Python / Typer / Rich",
+    "pattern": "Guided Repair Flow",
+    "surface": "Repair-first command UX with stable exit codes",
+    "previewAsset": "assets/template-previews/python-typer-repair-flow.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "repair flow",
+      "config recovery",
+      "validation retry"
+    ]
+  },
+  {
+    "id": "rust-clap-ratatui-dashboard",
+    "stack": "Rust / clap / ratatui",
+    "pattern": "Operator Cockpit",
+    "surface": "Full-screen dashboard with plain fallback",
+    "previewAsset": "assets/template-previews/rust-clap-ratatui-dashboard.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "dashboard",
+      "terminal workbench",
+      "stateful loop"
+    ]
+  },
+  {
+    "id": "shell-progress-ledger",
+    "stack": "Shell",
+    "pattern": "Progress Ledger",
+    "surface": "Plain step-by-step progress output",
+    "previewAsset": "assets/template-previews/shell-progress-ledger.txt",
+    "previewCommand": "bash ./preview.sh",
+    "useCases": [
+      "build progress",
+      "release ledger",
+      "installer progress"
+    ]
+  }
+]

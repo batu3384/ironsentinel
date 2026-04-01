@@ -1,0 +1,17 @@
+[
+  {
+    "id": "run-7-f000",
+    "scanId": "run-7",
+    "projectId": "prj-1",
+    "category": "malware",
+    "ruleId": "yara.suspiciouspackedbinary",
+    "title": "YARA signature matched: SuspiciousPackedBinary",
+    "severity": "high",
+    "confidence": 0.87,
+    "reachability": "repository",
+    "fingerprint": "5c8173e3d4e8b15c",
+    "remediation": "Inspect the matched artifact, confirm provenance, and quarantine or delete suspicious binaries before release.",
+    "location": "dist/packed.bin",
+    "module": "yara-x"
+  }
+]

@@ -1,0 +1,8 @@
+Radar Port operator cockpit
+j/k or arrows move, q exits, plain fallback outside TTY.
+
+> Review the active workspace
+  Validate the local toolchain
+  Start the first scan
+
+Primary action remains visible and machine-safe paths stay plain.
