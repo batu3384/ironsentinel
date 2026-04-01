@@ -18,9 +18,9 @@ import (
 )
 
 type StateStore struct {
-	mu         sync.RWMutex
-	path       string
-	db         *sql.DB
+	mu   sync.RWMutex
+	path string
+	db   *sql.DB
 }
 
 type schemaMigration struct {

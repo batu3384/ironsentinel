@@ -3,15 +3,24 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
 function Expect-Failure([string]$Expected, [scriptblock]$Action) {
+    $output = ""
+    $status = 0
+    $global:LASTEXITCODE = 0
+
     try {
-        & $Action 2>&1 | Out-String | Out-Null
-        throw "Command unexpectedly succeeded."
+        $output = (& $Action 2>&1 | Out-String)
+        $status = $LASTEXITCODE
     }
     catch {
-        $message = $_.Exception.Message
-        if ($message -notlike "*$Expected*") {
-            throw "[smoke] command failed without expected diagnostic: $message"
-        }
+        $output = ($_ | Out-String)
+        $status = if ($LASTEXITCODE -ne 0) { $LASTEXITCODE } else { 1 }
+    }
+
+    if ($status -eq 0) {
+        throw "[smoke] command unexpectedly succeeded."
+    }
+    if ($output -notlike "*$Expected*") {
+        throw "[smoke] command failed without expected diagnostic: $output"
     }
 }
 
