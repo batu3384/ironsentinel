@@ -22,6 +22,8 @@ function Expect-Failure([string]$Expected, [scriptblock]$Action) {
     if ($output -notlike "*$Expected*") {
         throw "[smoke] command failed without expected diagnostic: $output"
     }
+
+    $global:LASTEXITCODE = 0
 }
 
 Write-Host "[smoke] validating PowerShell flag guards"
@@ -32,3 +34,4 @@ Expect-Failure "Missing value for --engine" { & pwsh -NoLogo -NoProfile -File (J
 Expect-Failure "Missing value for --image" { & pwsh -NoLogo -NoProfile -File (Join-Path $root "scripts\build_scanner_image.ps1") --image }
 
 Write-Host "[smoke] PowerShell shell guard smoke flow completed"
+$global:LASTEXITCODE = 0
