@@ -13,10 +13,6 @@
   <img alt="License" src="https://img.shields.io/badge/License-MIT-166534?style=flat-square">
 </p>
 
-<p align="center">
-  <img src="docs/assets/readme/home.png" alt="IronSentinel command center home screen" width="100%">
-</p>
-
 `IronSentinel` is the primary product and `ironsentinel` is the primary binary.
 
 When you run `ironsentinel` in an interactive terminal, it opens the fullscreen command center by default. The platform keeps project history locally, runs guided security missions, normalizes findings into one model, and exports shareable reports without requiring a hosted control plane.
