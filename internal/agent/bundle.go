@@ -351,51 +351,47 @@ func bundleNameForBinary(binary string) string {
 }
 
 func detectVersion(binary string, args []string) string {
-	lowerBinary := strings.ToLower(filepath.Base(binary))
-	if strings.Contains(lowerBinary, "knip") {
+	toolName := versionProbeToolName(binary)
+	if strings.Contains(toolName, "knip") {
 		if version := detectKnipVersion(binary); version != "" {
 			return version
 		}
 	}
-	if strings.Contains(lowerBinary, "zaproxy") || strings.Contains(lowerBinary, "zap") {
+	if strings.Contains(toolName, "zaproxy") || strings.Contains(toolName, "zap") {
 		return detectZAPVersion(binary)
 	}
-	output, err := runProbeCommand(binary, args...)
+	output, err := runVersionProbeCommand(binary, args...)
 	if err != nil && len(output) == 0 {
 		return ""
 	}
-	text := string(output)
-	if strings.Contains(lowerBinary, "govulncheck") {
+	return parseVersionOutput(toolName, string(output))
+}
+
+func versionProbeToolName(binary string) string {
+	return strings.ToLower(filepath.Base(binary))
+}
+
+func parseVersionOutput(toolName, text string) string {
+	switch {
+	case strings.Contains(toolName, "govulncheck"):
 		if match := regexp.MustCompile(`(?m)Scanner:\s+govulncheck@v?(\d+(?:\.\d+)+)`).FindStringSubmatch(text); len(match) == 2 {
 			return match[1]
 		}
-	}
-	if strings.Contains(lowerBinary, "syft") {
+	case strings.Contains(toolName, "syft"), strings.Contains(toolName, "grype"), strings.Contains(toolName, "trivy"):
 		if match := regexp.MustCompile(`(?m)^Version:\s+(\d+(?:\.\d+)+)\s*$`).FindStringSubmatch(text); len(match) == 2 {
 			return match[1]
 		}
-	}
-	if strings.Contains(lowerBinary, "grype") {
-		if match := regexp.MustCompile(`(?m)^Version:\s+(\d+(?:\.\d+)+)\s*$`).FindStringSubmatch(text); len(match) == 2 {
-			return match[1]
-		}
-	}
-	if strings.Contains(lowerBinary, "trivy") {
-		if match := regexp.MustCompile(`(?m)^Version:\s+(\d+(?:\.\d+)+)\s*$`).FindStringSubmatch(text); len(match) == 2 {
-			return match[1]
-		}
-	}
-	if strings.Contains(lowerBinary, "osv-scanner") {
+	case strings.Contains(toolName, "osv-scanner"):
 		if match := regexp.MustCompile(`(?m)^osv-scanner version:\s+(\d+(?:\.\d+)+)\s*$`).FindStringSubmatch(text); len(match) == 2 {
 			return match[1]
 		}
-	}
-	if strings.Contains(lowerBinary, "zaproxy") || strings.Contains(lowerBinary, "zap") {
+	case strings.Contains(toolName, "zaproxy"), strings.Contains(toolName, "zap"):
 		matches := regexp.MustCompile(`(?m)^\s*(\d+(?:\.\d+)+)\s*$`).FindAllStringSubmatch(text, -1)
 		if len(matches) > 0 {
 			return matches[len(matches)-1][1]
 		}
 	}
+
 	lines := strings.Split(text, "\n")
 	for index := len(lines) - 1; index >= 0; index-- {
 		match := versionPattern.FindString(strings.TrimSpace(lines[index]))
@@ -437,7 +433,7 @@ func detectZAPVersion(binary string) string {
 			return version
 		}
 	}
-	output, err := runProbeCommand(binary, "-version")
+	output, err := runVersionProbeCommand(binary, "-version")
 	if err != nil && len(output) == 0 {
 		return ""
 	}

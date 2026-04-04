@@ -108,7 +108,6 @@ func TestEvaluateBundleHealthRequireIntegrityFailsOnUnverifiedTool(t *testing.T)
 }
 
 func TestDetectVersionUsesToolSpecificPatterns(t *testing.T) {
-	dir := t.TempDir()
 	cases := map[string]struct {
 		output string
 		want   string
@@ -121,11 +120,7 @@ func TestDetectVersionUsesToolSpecificPatterns(t *testing.T) {
 	}
 
 	for name, tc := range cases {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\ncat <<'EOF'\n"+tc.output+"EOF\n"), 0o755); err != nil {
-			t.Fatalf("write fake binary %s: %v", name, err)
-		}
-		if got := detectVersion(path, []string{"--version"}); got != tc.want {
+		if got := parseVersionOutput(name, tc.output); got != tc.want {
 			t.Fatalf("expected %s version %s, got %s", name, tc.want, got)
 		}
 	}

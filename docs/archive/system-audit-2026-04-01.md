@@ -1,5 +1,7 @@
 # IronSentinel Comprehensive System Audit
 
+> Historical snapshot from April 1, 2026. Use the current repository docs for active architecture and release guidance.
+
 ## Scope
 
 - Date: `2026-04-01`

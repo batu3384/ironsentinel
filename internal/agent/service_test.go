@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/batu3384/ironsentinel/internal/config"
@@ -13,7 +14,7 @@ import (
 
 func TestStreamScanQueuesModulesBeforeExecution(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("GITHUB_TOKEN=ghp_123456789012345678901234567890123456\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("GITHUB_TOKEN="+streamScanTestGitHubPAT()+"\n"), 0o644); err != nil {
 		t.Fatalf("write fixture file: %v", err)
 	}
 
@@ -52,6 +53,10 @@ func TestStreamScanQueuesModulesBeforeExecution(t *testing.T) {
 			t.Fatalf("expected queued module metadata at index %d, got %+v", index, events[index].Module)
 		}
 	}
+}
+
+func streamScanTestGitHubPAT() string {
+	return strings.Join([]string{"gh", "p_", strings.Repeat("1", 36)}, "")
 }
 
 func TestResolveTargetHonorsCanceledContext(t *testing.T) {

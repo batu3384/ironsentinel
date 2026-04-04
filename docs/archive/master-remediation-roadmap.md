@@ -1,5 +1,7 @@
 # Master Remediation Roadmap
 
+> Historical snapshot: this roadmap is preserved for audit history and no longer defines the current implementation plan.
+
 ## Objective
 
 Turn IronSentinel from a strong local AppSec foundation into a premium-grade terminal-first security platform.

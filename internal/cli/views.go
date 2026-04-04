@@ -92,11 +92,11 @@ func (a *App) renderRunWatchFrame(runID string, interval time.Duration) error {
 
 	pterm.Info.Println(a.catalog.T("watch_interval", interval.String()))
 	a.renderRunSummary(run, project, findings)
-	delta, _, baseline, err := a.service.GetRunDelta(runID, "")
+	report, err := a.service.BuildRunReport(runID, "")
 	if err != nil {
 		return err
 	}
-	a.renderRunDelta(run, delta, baseline)
+	a.renderRunDeltaReport(report)
 	a.renderModules(run.ModuleResults)
 	return a.renderExecutionTimeline(runID)
 }
@@ -914,11 +914,11 @@ func (a *App) renderRunDetails(runID string) error {
 	pterm.Println(a.renderStaticBrandHero(a.catalog.T("show_title")))
 	pterm.Println()
 	a.renderRunSummary(run, project, findings)
-	delta, _, baseline, err := a.service.GetRunDelta(runID, "")
+	report, err := a.service.BuildRunReport(runID, "")
 	if err != nil {
 		return err
 	}
-	a.renderRunDelta(run, delta, baseline)
+	a.renderRunDeltaReport(report)
 	a.renderModules(run.ModuleResults)
 	if err := a.renderExecutionTimeline(run.ID); err != nil {
 		return err
@@ -1354,18 +1354,22 @@ func extractModuleNames(modules []domain.ModuleResult) []string {
 }
 
 func (a *App) renderRunDeltaView(runID, baselineRunID string) error {
-	delta, current, baseline, err := a.service.GetRunDelta(runID, baselineRunID)
+	report, err := a.service.BuildRunReport(runID, baselineRunID)
 	if err != nil {
 		return err
 	}
 
 	pterm.DefaultHeader.Println(a.catalog.T("diff_title"))
-	a.renderRunDelta(current, delta, baseline)
+	a.renderRunDeltaReport(report)
 	return nil
 }
 
 func (a *App) runRegressionGate(runID, baselineRunID string, threshold domain.Severity) error {
-	delta, current, baseline, blocking, err := a.service.EvaluateGate(runID, baselineRunID, threshold)
+	return a.runRegressionGateWithVEX(runID, baselineRunID, threshold, "")
+}
+
+func (a *App) runRegressionGateWithVEX(runID, baselineRunID string, threshold domain.Severity, vexPath string) error {
+	delta, current, baseline, blocking, err := a.service.EvaluateGateWithVEX(runID, baselineRunID, threshold, vexPath)
 	if err != nil {
 		return err
 	}
@@ -1395,7 +1399,11 @@ func (a *App) runRegressionGate(runID, baselineRunID string, threshold domain.Se
 }
 
 func (a *App) runPolicyEvaluation(runID, baselineRunID, policyID string) error {
-	evaluation, current, baseline, err := a.service.EvaluatePolicy(runID, baselineRunID, policyID)
+	return a.runPolicyEvaluationWithVEX(runID, baselineRunID, policyID, "")
+}
+
+func (a *App) runPolicyEvaluationWithVEX(runID, baselineRunID, policyID, vexPath string) error {
+	evaluation, current, baseline, err := a.service.EvaluatePolicyWithVEX(runID, baselineRunID, policyID, vexPath)
 	if err != nil {
 		return err
 	}
@@ -1473,6 +1481,10 @@ func (a *App) renderRunDelta(current domain.ScanRun, delta domain.RunDelta, base
 	a.renderDeltaSection(a.catalog.T("diff_section_new"), delta.NewFindings)
 	a.renderDeltaSection(a.catalog.T("diff_section_existing"), delta.ExistingFindings)
 	a.renderDeltaSection(a.catalog.T("diff_section_resolved"), delta.ResolvedFindings)
+}
+
+func (a *App) renderRunDeltaReport(report domain.RunReport) {
+	a.renderRunDelta(report.Run, report.Delta, report.Baseline)
 }
 
 func (a *App) renderDeltaSection(title string, findings []domain.Finding) {
@@ -1650,15 +1662,11 @@ func (a *App) renderFindingsView(runID, severity, category, status, change strin
 
 	filtered := findings
 	if strings.TrimSpace(change) != "" {
-		delta, _, _, err := a.service.GetRunDelta(runID, "")
+		report, err := a.service.BuildRunReport(runID, "")
 		if err != nil {
 			return err
 		}
-		source := findings
-		if strings.EqualFold(strings.TrimSpace(change), string(domain.FindingResolved)) {
-			source = delta.ResolvedFindings
-		}
-		filtered = filterFindingsByChange(source, delta, change)
+		filtered = filterFindingsByReportChange(report, change)
 	}
 	filtered = filterFindings(filtered, severity, category, status, limit)
 
@@ -1837,6 +1845,9 @@ func (a *App) renderFindings(findings []domain.Finding) {
 func (a *App) renderFindingDetails(finding domain.Finding) error {
 	pterm.Println(a.renderStaticBrandHero(a.catalog.T("finding_details_title")))
 	pterm.Println()
+	vexStatus := defaultString(a.findingVEXStatusLabel(finding.VEXStatus), "-")
+	vexReason := defaultString(a.findingVEXJustificationLabel(finding.VEXJustification), "-")
+	vexSource := defaultString(finding.VEXStatementSource, "-")
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
 			{Data: a.ptermSprintf("%s\n%s\n%s\n[cyan]%s[-]", a.catalog.T("severity"), a.severityBadge(finding.Severity), a.catalog.T("category"), a.categoryLabel(finding.Category))},
@@ -1849,9 +1860,9 @@ func (a *App) renderFindingDetails(finding domain.Finding) error {
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("finding_attack_chain_title"), a.findingAttackChainSummary(finding), a.catalog.T("owner"), defaultString(finding.Owner, "-"))},
 		},
 		{
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%.2f[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), finding.Title, a.catalog.T("confidence"), finding.Confidence, a.catalog.T("reachability"), coalesceString(finding.Reachability, "-"))},
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%.1f[-]", a.catalog.T("fingerprint"), finding.Fingerprint, a.catalog.T("finding_asset_value"), finding.AssetValue)},
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("finding_exposure_title"), a.findingExposureSummary(finding))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%.2f[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), finding.Title, a.catalog.T("confidence"), finding.Confidence, a.catalog.T("reachability"), coalesceString(finding.Reachability.String(), "-"))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%.1f[-]\nVEX\n[cyan]%s[-]", a.catalog.T("fingerprint"), finding.Fingerprint, a.catalog.T("finding_asset_value"), finding.AssetValue, vexStatus)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("finding_exposure_title"), a.findingExposureSummary(finding), a.catalog.T("reason"), vexReason)},
 		},
 	}).Render()
 
@@ -1866,11 +1877,13 @@ func (a *App) renderFindingDetails(finding domain.Finding) error {
 				a.catalog.T("finding_hotlist_title"),
 				a.findingOwnershipSummary(finding),
 			)},
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]",
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]",
 				a.catalog.T("overview_next_steps"),
 				a.commandHint("review", finding.Fingerprint, "--run", finding.ScanID),
 				a.catalog.T("triage_title"),
 				a.commandHint("triage", "set", finding.Fingerprint, "--run", finding.ScanID),
+				a.catalog.T("artifact_uri"),
+				vexSource,
 			)},
 		},
 	}).Render()
@@ -1970,6 +1983,36 @@ func (a *App) renderTriage(status string) error {
 	return pterm.DefaultTable.WithHasHeader().WithData(data).Render()
 }
 
+func filterFindingsByReportChange(report domain.RunReport, change string) []domain.Finding {
+	normalized := strings.TrimSpace(strings.ToLower(change))
+	if normalized == "" {
+		return findingsFromReport(report)
+	}
+	if normalized == strings.ToLower(string(domain.FindingResolved)) {
+		return append([]domain.Finding(nil), report.Delta.ResolvedFindings...)
+	}
+
+	filtered := make([]domain.Finding, 0, len(report.Findings))
+	for _, item := range report.Findings {
+		itemChange := item.Change
+		if itemChange == "" {
+			itemChange = domain.FindingNew
+		}
+		if strings.EqualFold(string(itemChange), normalized) {
+			filtered = append(filtered, item.Finding)
+		}
+	}
+	return filtered
+}
+
+func findingsFromReport(report domain.RunReport) []domain.Finding {
+	findings := make([]domain.Finding, 0, len(report.Findings))
+	for _, item := range report.Findings {
+		findings = append(findings, item.Finding)
+	}
+	return findings
+}
+
 func (a *App) renderSuppressions() error {
 	suppressions := a.service.ListSuppressions()
 	pterm.Println(a.renderStaticBrandHero(a.catalog.T("suppress_list_title")))
@@ -2035,7 +2078,11 @@ func (a *App) renderDASTPlan(plan domain.DastPlan, targets []domain.DastTarget) 
 	if len(targets) > 0 {
 		items := make([]string, 0, len(targets))
 		for _, target := range targets {
-			items = append(items, fmt.Sprintf("%s=%s", target.Name, target.URL))
+			summary := fmt.Sprintf("%s=%s", target.Name, target.URL)
+			if target.AuthProfile != "" {
+				summary += fmt.Sprintf(" [%s:%s]", target.AuthType.String(), target.AuthProfile)
+			}
+			items = append(items, summary)
 		}
 		targetSummary = strings.Join(items, "\n")
 	}

@@ -49,7 +49,7 @@ func TestExternalModuleChaosRecoversAfterTransientParseFailure(t *testing.T) {
 				Title:        payload.Title,
 				Module:       module,
 				Confidence:   0.8,
-				Reachability: "likely",
+				Reachability: domain.ReachabilityPossible,
 			}}, nil
 	})
 

@@ -14,11 +14,14 @@ node_modules
 .claude
 .tmp_scan_render_debug.go
 ironsentinel-dev
+ironsentinel
+releasectl
 runtime/bin
 runtime/gocache
 runtime/tools/bin
 runtime/tools/codeql
 runtime/tools/zap
 runtime/tools/npm/node_modules
+internal/cli/runtime/data
 cli-audit-report.md
 cli-fix-plan.md

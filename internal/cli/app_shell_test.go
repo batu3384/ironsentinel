@@ -121,6 +121,189 @@ func TestAppShellPaletteStartBlockedWithoutValidationTarget(t *testing.T) {
 	}
 }
 
+func TestAppShellFindingAndRunFocusHighlightSCASignals(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	run := domain.ScanRun{
+		ID:        "run-1",
+		ProjectID: project.ID,
+		Status:    domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings:    1,
+			CountsBySeverity: map[domain.Severity]int{domain.SeverityHigh: 1},
+		},
+	}
+	finding := domain.Finding{
+		ScanID:       run.ID,
+		ProjectID:    project.ID,
+		Fingerprint:  "fp-1",
+		Category:     domain.CategorySCA,
+		Severity:     domain.SeverityHigh,
+		Title:        "Reachable dependency confusion risk",
+		Location:     "package.json",
+		Module:       "dependency-confusion",
+		Reachability: domain.ReachabilityReachable,
+		Tags:         []string{"supply-chain:dependency-confusion"},
+		Priority:     8.7,
+	}
+
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteFindings,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.snapshot.Portfolio.Projects = []domain.Project{project}
+	model.snapshot.Portfolio.Runs = []domain.ScanRun{run}
+	model.snapshot.Portfolio.Findings = []domain.Finding{finding}
+	model.cursor = 0
+
+	findingLines := model.findingFocusLines(80)
+	if !appShellLinesContain(findingLines, "reachable path | dependency confusion signal") {
+		t.Fatalf("expected finding focus to show the supply-chain signal, got %v", findingLines)
+	}
+
+	model.route = appRouteRuns
+	runLines := model.runFocusLines(80)
+	if !appShellLinesContain(runLines, "dependency confusion signal") {
+		t.Fatalf("expected run focus to surface the top finding signal, got %v", runLines)
+	}
+}
+
+func TestAppShellFindingDetailShowsVEXState(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	run := domain.ScanRun{
+		ID:        "run-vex-ui",
+		ProjectID: project.ID,
+		Status:    domain.ScanCompleted,
+		StartedAt: time.Now().UTC(),
+		Profile:   domain.ScanProfile{SeverityGate: domain.SeverityHigh},
+		Summary: domain.ScanSummary{
+			TotalFindings:    1,
+			CountsBySeverity: map[domain.Severity]int{domain.SeverityHigh: 1},
+		},
+	}
+	finding := domain.Finding{
+		ScanID:             run.ID,
+		ProjectID:          project.ID,
+		Fingerprint:        "fp-vex-1",
+		Category:           domain.CategorySCA,
+		Severity:           domain.SeverityHigh,
+		Title:              "Reachable package vulnerability",
+		Location:           "lodash",
+		Module:             "osv-scanner",
+		Reachability:       domain.ReachabilityReachable,
+		VEXStatus:          domain.VEXStatusNotAffected,
+		VEXJustification:   "vulnerable_code_not_present",
+		VEXStatementSource: "https://example.test/vex",
+		Priority:           8.1,
+	}
+
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteFindings,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.snapshot.Portfolio.Projects = []domain.Project{project}
+	model.snapshot.Portfolio.Runs = []domain.ScanRun{run}
+	model.snapshot.Portfolio.Findings = []domain.Finding{finding}
+	model.cursor = 0
+
+	content := model.renderFindingDetailContent(100)
+	for _, want := range []string{"not affected", "vulnerable code not present", "https://example.test/vex"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected finding detail to contain %q, got %q", want, content)
+		}
+	}
+}
+
+func TestAppShellFindingDetailShowsCampaignHint(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	run := domain.ScanRun{
+		ID:        "run-campaign-ui",
+		ProjectID: project.ID,
+		Status:    domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings:    1,
+			CountsBySeverity: map[domain.Severity]int{domain.SeverityHigh: 1},
+		},
+	}
+	finding := domain.Finding{
+		ScanID:      run.ID,
+		ProjectID:   project.ID,
+		Fingerprint: "fp-campaign-1",
+		Category:    domain.CategorySCA,
+		Severity:    domain.SeverityHigh,
+		Title:       "Remediation candidate",
+		Location:    "package.json",
+		Module:      "campaign-fixture",
+	}
+
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteFindings,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.snapshot.Portfolio.Projects = []domain.Project{project}
+	model.snapshot.Portfolio.Runs = []domain.ScanRun{run}
+	model.snapshot.Portfolio.Findings = []domain.Finding{finding}
+	model.cursor = 0
+
+	content := model.renderFindingDetailContent(100)
+	for _, want := range []string{app.catalog.T("campaigns_title"), "--project", "--run", "--title", "--finding"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected finding detail campaign hint to contain %q, got %q", want, content)
+		}
+	}
+}
+
+func TestAppShellRunDetailShowsCampaignHint(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	run := domain.ScanRun{
+		ID:        "run-campaign-ui",
+		ProjectID: project.ID,
+		Status:    domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings:    1,
+			CountsBySeverity: map[domain.Severity]int{domain.SeverityHigh: 1},
+		},
+	}
+	finding := domain.Finding{
+		ScanID:      run.ID,
+		ProjectID:   project.ID,
+		Fingerprint: "fp-campaign-1",
+		Category:    domain.CategorySCA,
+		Severity:    domain.SeverityHigh,
+		Title:       "Remediation candidate",
+		Location:    "package.json",
+		Module:      "campaign-fixture",
+	}
+
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteRuns,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.snapshot.Portfolio.Projects = []domain.Project{project}
+	model.snapshot.Portfolio.Runs = []domain.ScanRun{run}
+	model.snapshot.Portfolio.Findings = []domain.Finding{finding}
+	model.cursor = 0
+
+	content := model.renderRunDetailContent(100)
+	for _, want := range []string{app.catalog.T("campaigns_title"), "--project", "--run", "--title"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected run detail campaign hint to contain %q, got %q", want, content)
+		}
+	}
+}
+
+func appShellLinesContain(lines []string, needle string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAppShellReviewStartRequiresProject(t *testing.T) {
 	app, _ := newTestTUIApp(t)
 	model := newAppShellModel(app, appShellLaunchState{
@@ -182,6 +365,17 @@ func TestAppShellResolvedReviewProfileActiveValidationEnablesTarget(t *testing.T
 	model := newAppShellModel(app, appShellLaunchState{
 		Route:             appRouteScanReview,
 		SelectedProjectID: project.ID,
+		ReviewDASTTargets: []domain.DastTarget{{
+			Name:        "api",
+			URL:         "https://example.internal",
+			AuthType:    domain.DastAuthBearer,
+			AuthProfile: "staging-bearer",
+		}},
+		ReviewAuthProfiles: []domain.DastAuthProfile{{
+			Name:      "staging-bearer",
+			Type:      domain.DastAuthBearer,
+			SecretEnv: "STAGING_API_TOKEN",
+		}},
 		Review: scanReviewState{
 			Preset:           reviewPresetFullDeep,
 			Isolation:        domain.IsolationAuto,
@@ -199,6 +393,100 @@ func TestAppShellResolvedReviewProfileActiveValidationEnablesTarget(t *testing.T
 	}
 	if len(profile.DASTTargets) != 1 || profile.DASTTargets[0].URL != "https://example.internal" {
 		t.Fatalf("expected preserved dast target, got %+v", profile.DASTTargets)
+	}
+	if len(profile.DASTAuthProfiles) != 1 || profile.DASTAuthProfiles[0].Name != "staging-bearer" {
+		t.Fatalf("expected preserved dast auth profile, got %+v", profile.DASTAuthProfiles)
+	}
+	if profile.DASTTargets[0].AuthProfile != "staging-bearer" {
+		t.Fatalf("expected target auth profile to survive review state, got %+v", profile.DASTTargets)
+	}
+}
+
+func TestAppShellRefreshReviewContextReusesCachedEntryForUnchangedSnapshot(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteScanReview,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.reviewContext = reviewContextCacheEntry{
+		projectID:     project.ID,
+		snapshotStamp: model.snapshotUpdatedAt,
+		review:        model.review,
+		profile: domain.ScanProfile{
+			Mode:    domain.ScanMode("cached-mode"),
+			Modules: []string{"cached-module"},
+		},
+		doctor: domain.RuntimeDoctor{
+			Ready: true,
+		},
+		ready:           true,
+		blockers:        []string{"cached blocker"},
+		includedModules: map[string]struct{}{"cached-module": {}},
+		laneDescriptors: []scanLaneDescriptor{{
+			Key:   "cached",
+			Title: "Cached",
+			Kind:  "fast",
+			ETA:   "cached",
+		}},
+		flowCurrent:  "cached-current",
+		flowNext:     "cached-next",
+		flowDeferred: "cached-deferred",
+	}
+
+	model.refreshReviewContext()
+
+	if model.reviewContext.profile.Mode != domain.ScanMode("cached-mode") {
+		t.Fatalf("expected cached profile to be reused, got %q", model.reviewContext.profile.Mode)
+	}
+	if len(model.reviewContext.blockers) != 1 || model.reviewContext.blockers[0] != "cached blocker" {
+		t.Fatalf("expected cached blockers to be reused, got %+v", model.reviewContext.blockers)
+	}
+	if model.reviewContext.flowCurrent != "cached-current" || model.reviewContext.flowNext != "cached-next" || model.reviewContext.flowDeferred != "cached-deferred" {
+		t.Fatalf("expected cached lane flow to be reused, got current=%q next=%q deferred=%q", model.reviewContext.flowCurrent, model.reviewContext.flowNext, model.reviewContext.flowDeferred)
+	}
+}
+
+func TestAppShellRefreshReviewContextRebuildsAfterSnapshotChange(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	model := newAppShellModel(app, appShellLaunchState{
+		Route:             appRouteScanReview,
+		SelectedProjectID: project.ID,
+		Review:            defaultScanReviewState(app.cfg.SandboxMode),
+	})
+	model.reviewContext = reviewContextCacheEntry{
+		projectID:     project.ID,
+		snapshotStamp: model.snapshotUpdatedAt,
+		review:        model.review,
+		profile: domain.ScanProfile{
+			Mode:    domain.ScanMode("cached-mode"),
+			Modules: []string{"cached-module"},
+		},
+		doctor: domain.RuntimeDoctor{
+			Ready: true,
+		},
+		ready:           true,
+		blockers:        []string{"cached blocker"},
+		includedModules: map[string]struct{}{"cached-module": {}},
+		laneDescriptors: []scanLaneDescriptor{{
+			Key:   "cached",
+			Title: "Cached",
+			Kind:  "fast",
+			ETA:   "cached",
+		}},
+		flowCurrent:  "cached-current",
+		flowNext:     "cached-next",
+		flowDeferred: "cached-deferred",
+	}
+	model.snapshotUpdatedAt = model.snapshotUpdatedAt.Add(time.Second)
+
+	model.refreshReviewContext()
+
+	if model.reviewContext.profile.Mode == domain.ScanMode("cached-mode") {
+		t.Fatalf("expected snapshot change to rebuild review context")
+	}
+	if model.reviewContext.snapshotStamp != model.snapshotUpdatedAt {
+		t.Fatalf("expected rebuilt review context to track current snapshot timestamp")
 	}
 }
 
@@ -496,7 +784,7 @@ func TestAppShellBeginLiveScanMovesToLiveRoute(t *testing.T) {
 		SeverityGate: domain.SeverityHigh,
 		Isolation:    domain.IsolationAuto,
 	}
-	updated, cmd := model.beginLiveScan(project, profile, app.service.RuntimeDoctor(profile, false, false))
+	updated, cmd := model.beginLiveScan(project, profile, app.runtimeDoctor(profile, false, false))
 	next := updated.(appShellModel)
 	if next.route != appRouteLiveScan {
 		t.Fatalf("expected live scan route, got %v", next.route)

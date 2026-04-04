@@ -512,78 +512,15 @@ func orderModulePlan(modules []moduleRunner) []moduleRunner {
 }
 
 func moduleLane(name string, category domain.FindingCategory) string {
-	switch name {
-	case "stack-detector", "surface-inventory", "script-audit", "runtime-config-audit":
-		return "surface"
-	case "semgrep", "codeql", "gitleaks", "secret-heuristics":
-		return "code"
-	case "trivy", "syft", "grype", "osv-scanner", "dependency-confusion", "licensee", "scancode", "govulncheck", "staticcheck", "knip", "vulture":
-		return "supply"
-	case "checkov", "tfsec", "kics", "trivy-image":
-		return "infra"
-	case "malware-signature", "clamscan", "yara-x", "binary-entropy":
-		return "malware"
-	case "nuclei", "zaproxy":
-		return "active"
-	}
-	switch category {
-	case domain.CategoryPlatform:
-		return "surface"
-	case domain.CategorySAST, domain.CategorySecret:
-		return "code"
-	case domain.CategorySCA, domain.CategoryCompliance, domain.CategoryMaintainability:
-		return "supply"
-	case domain.CategoryIaC, domain.CategoryContainer:
-		return "infra"
-	case domain.CategoryMalware:
-		return "malware"
-	case domain.CategoryDAST:
-		return "active"
-	default:
-		return "surface"
-	}
+	return domain.ModulePlanSpecFor(name, category).Lane
 }
 
 func moduleLaneRank(lane string) int {
-	switch lane {
-	case "surface":
-		return 0
-	case "code":
-		return 1
-	case "supply":
-		return 2
-	case "infra":
-		return 3
-	case "malware":
-		return 4
-	case "active":
-		return 5
-	default:
-		return 6
-	}
+	return domain.ScanLaneRank(lane)
 }
 
 func modulePriority(name string) int {
-	switch name {
-	case "stack-detector":
-		return 0
-	case "surface-inventory", "secret-heuristics", "malware-signature", "dependency-confusion":
-		return 1
-	case "script-audit", "runtime-config-audit", "gitleaks", "semgrep", "syft", "checkov", "binary-entropy":
-		return 2
-	case "trivy", "grype", "osv-scanner", "tfsec", "kics", "clamscan", "yara-x", "licensee", "scancode":
-		return 3
-	case "govulncheck", "staticcheck", "knip", "vulture", "trivy-image":
-		return 4
-	case "codeql":
-		return 5
-	case "nuclei":
-		return 6
-	case "zaproxy":
-		return 7
-	default:
-		return 4
-	}
+	return domain.ModulePlanSpecFor(name, "").Priority
 }
 
 func emitModuleExecutionEvent(
@@ -671,7 +608,7 @@ func parseSemgrep(request domain.AgentScanRequest, module string, output []byte)
 			Title:        item.Extra.Message,
 			Severity:     severity,
 			Confidence:   0.74,
-			Reachability: "possible",
+			Reachability: domain.ReachabilityPossible,
 			Fingerprint:  domain.MakeFingerprint(module, item.CheckID, item.Path, item.Extra.Message),
 			Remediation:  "Review the code path, confirm exploitability, and patch according to the rule guidance.",
 			Location:     item.Path,
@@ -712,7 +649,7 @@ func parseGitleaks(request domain.AgentScanRequest, module string, output []byte
 			Title:        item.Description,
 			Severity:     domain.SeverityHigh,
 			Confidence:   0.9,
-			Reachability: "unknown",
+			Reachability: domain.ReachabilityUnknown,
 			Fingerprint:  domain.MakeFingerprint(module, item.RuleID, item.File),
 			Remediation:  "Rotate the secret and rewrite repository history if the value was committed.",
 			Location:     item.File,
@@ -763,7 +700,7 @@ func parseTrivy(request domain.AgentScanRequest, module string, output []byte) (
 				Title:        vulnerability.Title,
 				Severity:     mapSeverity(vulnerability.Severity),
 				Confidence:   0.75,
-				Reachability: "unknown",
+				Reachability: domain.ReachabilityUnknown,
 				Fingerprint:  domain.MakeFingerprint(module, vulnerability.VulnerabilityID, result.Target),
 				EvidenceRef:  vulnerability.PrimaryURL,
 				Remediation:  "Patch or pin the vulnerable package version and verify reachability before release.",
@@ -782,7 +719,7 @@ func parseTrivy(request domain.AgentScanRequest, module string, output []byte) (
 				Title:        misconfiguration.Title,
 				Severity:     mapSeverity(misconfiguration.Severity),
 				Confidence:   0.71,
-				Reachability: "not-applicable",
+				Reachability: domain.ReachabilityNotApplicable,
 				Fingerprint:  domain.MakeFingerprint(module, misconfiguration.ID, result.Target),
 				Remediation:  "Apply the recommended IaC control and rerun the profile.",
 				Location:     result.Target,
@@ -860,7 +797,7 @@ func parseOSV(request domain.AgentScanRequest, module string, output []byte) (do
 					Title:        vulnerability.Summary,
 					Severity:     domain.SeverityHigh,
 					Confidence:   0.7,
-					Reachability: "unknown",
+					Reachability: domain.ReachabilityUnknown,
 					Fingerprint:  domain.MakeFingerprint(module, vulnerability.ID, pkg.Package.Name),
 					Remediation:  "Upgrade the affected dependency and verify the lockfile update under the same profile.",
 					Location:     pkg.Package.Name,
@@ -906,7 +843,7 @@ func parseCheckov(request domain.AgentScanRequest, module string, output []byte)
 			Title:        check.CheckName,
 			Severity:     mapSeverity(check.Severity),
 			Confidence:   0.78,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, check.CheckID, check.FilePath),
 			Remediation:  "Apply the IaC control recommended by Checkov and rerun the policy pack.",
 			Location:     check.FilePath,
@@ -944,7 +881,7 @@ func parseGovulncheck(request domain.AgentScanRequest, module string, output []b
 			Title:        summary,
 			Severity:     domain.SeverityHigh,
 			Confidence:   0.8,
-			Reachability: "reachable",
+			Reachability: domain.ReachabilityReachable,
 			Fingerprint:  domain.MakeFingerprint(module, id, "go"),
 			Remediation:  "Upgrade the Go module and verify reachable call paths are removed from the release artifact.",
 			Location:     "go.mod",
@@ -981,7 +918,7 @@ func parseStaticcheck(request domain.AgentScanRequest, module string, output []b
 			Title:        message,
 			Severity:     domain.SeverityLow,
 			Confidence:   0.65,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, code, file),
 			Remediation:  "Clean up the unused or suspicious code path to keep the scan surface tight.",
 			Location:     file,
@@ -1018,7 +955,7 @@ func parseKnip(request domain.AgentScanRequest, module string, output []byte) (d
 			Title:        "Potential unused file detected",
 			Severity:     domain.SeverityLow,
 			Confidence:   0.72,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, "file", file),
 			Remediation:  "Confirm the file is dead code and remove it to reduce attack surface and maintenance drag.",
 			Location:     file,
@@ -1036,7 +973,7 @@ func parseKnip(request domain.AgentScanRequest, module string, output []byte) (d
 			Title:        "Potential unused dependency detected",
 			Severity:     domain.SeverityLow,
 			Confidence:   0.7,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, "dependency", dependency),
 			Remediation:  "Remove the dependency if unused to reduce supply-chain exposure.",
 			Location:     dependency,
@@ -1074,7 +1011,7 @@ func parseVulture(request domain.AgentScanRequest, module string, output []byte)
 			Title:        "Potential dead Python code: " + item.Name,
 			Severity:     domain.SeverityLow,
 			Confidence:   float64(item.Confidence) / 100,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, item.Type, item.Name, item.Filename),
 			Remediation:  "Confirm whether the symbol is truly unused, then remove it and rerun the profile.",
 			Location:     item.Filename,
@@ -1112,7 +1049,7 @@ func parseClam(request domain.AgentScanRequest, module string, output []byte) (d
 			Title:        "ClamAV signature matched: " + signature,
 			Severity:     domain.SeverityCritical,
 			Confidence:   0.95,
-			Reachability: "not-applicable",
+			Reachability: domain.ReachabilityNotApplicable,
 			Fingerprint:  domain.MakeFingerprint(module, signature, location),
 			Remediation:  "Quarantine the file, inspect repository history, and rerun the malware profile after cleanup.",
 			Location:     location,
@@ -1150,7 +1087,7 @@ func parseNuclei(request domain.AgentScanRequest, module string, output []byte) 
 			Title:        title,
 			Severity:     mapSeverity(severity),
 			Confidence:   0.68,
-			Reachability: "reachable",
+			Reachability: domain.ReachabilityReachable,
 			Fingerprint:  domain.MakeFingerprint(module, templateID, matched),
 			Remediation:  "Validate the finding against the staging target and apply the matching fix or compensating control.",
 			Location:     matched,

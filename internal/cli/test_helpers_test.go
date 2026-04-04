@@ -30,6 +30,14 @@ func newTestTUIApp(t *testing.T) (*App, domain.Project) {
 		service: service,
 		lang:    i18n.EN,
 		catalog: i18n.New(i18n.EN),
+		runtimeDoctorFn: func(profile domain.ScanProfile, strictVersions, requireIntegrity bool) domain.RuntimeDoctor {
+			return domain.RuntimeDoctor{
+				Mode:             profile.Mode,
+				StrictVersions:   strictVersions,
+				RequireIntegrity: requireIntegrity,
+				Ready:            true,
+			}
+		},
 	}
 
 	root := t.TempDir()
@@ -46,7 +54,7 @@ func newFocusedRunFilterFixture(t *testing.T) (*App, domain.ScanRun, string, str
 	app, _ := newTestTUIApp(t)
 	root := t.TempDir()
 	content := strings.Join([]string{
-		`GITHUB_TOKEN="ghp_123456789012345678901234567890123456"`,
+		`GITHUB_TOKEN="` + fakeGitHubPAT() + `"`,
 		`password = "supersecret123"`,
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(content), 0o644); err != nil {
@@ -86,4 +94,8 @@ func newFocusedRunFilterFixture(t *testing.T) (*App, domain.ScanRun, string, str
 	}
 
 	return app, run, criticalTitle, mediumTitle
+}
+
+func fakeGitHubPAT() string {
+	return strings.Join([]string{"gh", "p_", strings.Repeat("1", 36)}, "")
 }

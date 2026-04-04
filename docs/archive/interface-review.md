@@ -1,5 +1,7 @@
 # Interface Review
 
+> Historical snapshot: this review predates the current command-center architecture. Refer to [`docs/architecture.md`](/Users/batuhanyuksel/Documents/security/docs/architecture.md) for the live interface model.
+
 ## Executive Summary
 
 The interface layer is credible as a power-user local AppSec CLI, but it is not yet a cohesive premium terminal product. The strongest parts are breadth of command coverage, scriptability, bilingual runtime output, and a clean split between explicit command usage and interactive fallbacks. The weakest parts are fragmentation across three user-facing surfaces (`overview`, `console`, `tui`), partial localization, weak large-result ergonomics, and a very large orchestration file that will slow down consistent evolution.
@@ -11,14 +13,14 @@ The main conclusion is straightforward: the product already has enough features,
 - Entry point: [cmd/ironsentinel/main.go](/Users/batuhanyuksel/Documents/security/cmd/ironsentinel/main.go)
 - Main command graph: [internal/cli/app.go:146](/Users/batuhanyuksel/Documents/security/internal/cli/app.go:146)
 - Overview/dashboard surface: [internal/cli/dashboard.go:45](/Users/batuhanyuksel/Documents/security/internal/cli/dashboard.go:45)
-- Fullscreen TUI: [internal/cli/tui.go:57](/Users/batuhanyuksel/Documents/security/internal/cli/tui.go:57)
+- Fullscreen command center: [internal/cli/app_shell.go:1](/Users/batuhanyuksel/Documents/security/internal/cli/app_shell.go:1)
 - Localization catalog: [internal/i18n/catalog.go:19](/Users/batuhanyuksel/Documents/security/internal/i18n/catalog.go:19)
 
 The interface currently exposes three separate interaction models:
 
 1. `overview`: static operational summary
 2. `console`: prompt-driven guided loop
-3. `tui`: fullscreen read-focused terminal UI
+3. `tui`: historical compatibility entry into the fullscreen command center
 
 ## Strengths
 

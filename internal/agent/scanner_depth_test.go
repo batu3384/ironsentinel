@@ -143,6 +143,182 @@ func TestBuildZAPAutomationCommandWritesPlan(t *testing.T) {
 	}
 }
 
+func TestBuildZAPAutomationCommandInjectsBearerAuthAndVerification(t *testing.T) {
+	t.Setenv("STAGING_API_TOKEN", "top-secret-token")
+
+	output := t.TempDir()
+	execution := moduleExecution{
+		mode:          domain.IsolationLocal,
+		hostOutputDir: output,
+		outputDir:     output,
+		request: domain.AgentScanRequest{
+			TargetPath: t.TempDir(),
+			Profile: domain.ScanProfile{
+				Mode:         domain.ModeDeep,
+				AllowNetwork: true,
+				DASTTargets: []domain.DastTarget{{
+					Name:        "api",
+					URL:         "https://api.example.test",
+					AuthType:    domain.DastAuthBearer,
+					AuthProfile: "staging-bearer",
+				}},
+				DASTAuthProfiles: []domain.DastAuthProfile{{
+					Name:                "staging-bearer",
+					Type:                domain.DastAuthBearer,
+					SecretEnv:           "STAGING_API_TOKEN",
+					SessionCheckURL:     "https://api.example.test/me",
+					SessionCheckPattern: "200 OK",
+				}},
+			},
+		},
+	}
+
+	command, _, err := buildZAPAutomationCommand(config.Config{}, "zaproxy", execution)
+	if err != nil {
+		t.Fatalf("build zap command: %v", err)
+	}
+
+	env := strings.Join(command.Env, "\n")
+	for _, fragment := range []string{
+		"ZAP_AUTH_HEADER=Authorization",
+		"ZAP_AUTH_HEADER_VALUE=Bearer top-secret-token",
+		"ZAP_AUTH_HEADER_SITE=https://api.example.test",
+	} {
+		if !strings.Contains(env, fragment) {
+			t.Fatalf("expected zap env to contain %q, got %s", fragment, env)
+		}
+	}
+
+	planBody, err := os.ReadFile(filepath.Join(output, "zap-automation.yaml"))
+	if err != nil {
+		t.Fatalf("read zap plan: %v", err)
+	}
+	plan := string(planBody)
+	for _, fragment := range []string{"verification:", "pollUrl: 'https://api.example.test/me'", "pollAdditionalHeadersRegex: '200 OK'"} {
+		if !strings.Contains(plan, fragment) {
+			t.Fatalf("expected zap plan to contain %q, got %s", fragment, plan)
+		}
+	}
+}
+
+func TestBuildZAPAutomationCommandConfiguresBrowserAuthContext(t *testing.T) {
+	t.Setenv("STAGING_WEB_USER", "analyst@example.test")
+	t.Setenv("STAGING_WEB_PASS", "super-secret-password")
+
+	output := t.TempDir()
+	execution := moduleExecution{
+		mode:          domain.IsolationLocal,
+		hostOutputDir: output,
+		outputDir:     output,
+		request: domain.AgentScanRequest{
+			TargetPath: t.TempDir(),
+			Profile: domain.ScanProfile{
+				Mode:         domain.ModeActive,
+				AllowNetwork: true,
+				DASTTargets: []domain.DastTarget{{
+					Name:        "portal",
+					URL:         "https://app.example.test",
+					AuthType:    domain.DastAuthBrowser,
+					AuthProfile: "staging-browser",
+				}},
+				DASTAuthProfiles: []domain.DastAuthProfile{{
+					Name:            "staging-browser",
+					Type:            domain.DastAuthBrowser,
+					LoginPageURL:    "https://app.example.test/login",
+					LoginPageWait:   5,
+					BrowserID:       "firefox-headless",
+					UsernameEnv:     "STAGING_WEB_USER",
+					PasswordEnv:     "STAGING_WEB_PASS",
+					SessionCheckURL: "https://app.example.test/account",
+				}},
+			},
+		},
+	}
+
+	_, _, err := buildZAPAutomationCommand(config.Config{}, "zaproxy", execution)
+	if err != nil {
+		t.Fatalf("build zap command: %v", err)
+	}
+
+	planBody, err := os.ReadFile(filepath.Join(output, "zap-automation.yaml"))
+	if err != nil {
+		t.Fatalf("read zap plan: %v", err)
+	}
+	plan := string(planBody)
+	for _, fragment := range []string{
+		"method: browser",
+		"loginPageUrl: 'https://app.example.test/login'",
+		"loginPageWait: 5",
+		"browserId: 'firefox-headless'",
+		"method: autodetect",
+		"name: 'staging-browser'",
+		"username: 'analyst@example.test'",
+		"password: 'super-secret-password'",
+		"user: 'staging-browser'",
+	} {
+		if !strings.Contains(plan, fragment) {
+			t.Fatalf("expected zap browser auth plan to contain %q, got %s", fragment, plan)
+		}
+	}
+}
+
+func TestBuildZAPAutomationCommandConfiguresFormAuthContext(t *testing.T) {
+	output := t.TempDir()
+	execution := moduleExecution{
+		mode:          domain.IsolationLocal,
+		hostOutputDir: output,
+		outputDir:     output,
+		request: domain.AgentScanRequest{
+			TargetPath: t.TempDir(),
+			Profile: domain.ScanProfile{
+				Mode:         domain.ModeActive,
+				AllowNetwork: true,
+				DASTTargets: []domain.DastTarget{{
+					Name:        "portal",
+					URL:         "https://app.example.test",
+					AuthType:    domain.DastAuthForm,
+					AuthProfile: "staging-form",
+				}},
+				DASTAuthProfiles: []domain.DastAuthProfile{{
+					Name:             "staging-form",
+					Type:             domain.DastAuthForm,
+					LoginPageURL:     "https://app.example.test/login",
+					LoginRequestURL:  "https://app.example.test/sessions",
+					LoginRequestBody: "username={%username%}&password={%password%}",
+					UsernameEnv:      "STAGING_WEB_USER",
+					PasswordEnv:      "STAGING_WEB_PASS",
+					LoggedInRegex:    "dashboard",
+					LoggedOutRegex:   "sign in",
+				}},
+			},
+		},
+	}
+
+	_, _, err := buildZAPAutomationCommand(config.Config{}, "zaproxy", execution)
+	if err != nil {
+		t.Fatalf("build zap command: %v", err)
+	}
+
+	planBody, err := os.ReadFile(filepath.Join(output, "zap-automation.yaml"))
+	if err != nil {
+		t.Fatalf("read zap plan: %v", err)
+	}
+	plan := string(planBody)
+	for _, fragment := range []string{
+		"method: form",
+		"loginPageUrl: 'https://app.example.test/login'",
+		"loginRequestUrl: 'https://app.example.test/sessions'",
+		"loginRequestBody: 'username={%username%}&password={%password%}'",
+		"method: response",
+		"loggedInRegex: 'dashboard'",
+		"loggedOutRegex: 'sign in'",
+	} {
+		if !strings.Contains(plan, fragment) {
+			t.Fatalf("expected zap form auth plan to contain %q, got %s", fragment, plan)
+		}
+	}
+}
+
 func TestParseSARIFCategoryParsesFindings(t *testing.T) {
 	parser := parseSARIFCategory(domain.CategorySAST, "CodeQL")
 	output := []byte(`{

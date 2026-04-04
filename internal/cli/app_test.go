@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,10 +16,12 @@ import (
 	"time"
 
 	"github.com/pterm/pterm"
+	"github.com/spf13/cobra"
 
 	"github.com/batu3384/ironsentinel/internal/config"
 	"github.com/batu3384/ironsentinel/internal/domain"
 	"github.com/batu3384/ironsentinel/internal/i18n"
+	"github.com/batu3384/ironsentinel/internal/store"
 )
 
 func TestFilterFindingsAppliesSeverityCategoryAndLimit(t *testing.T) {
@@ -223,6 +228,150 @@ func TestBuildPortfolioSnapshotIndexesProjectsAndFindings(t *testing.T) {
 	}
 }
 
+func TestLoadDASTAuthProfilesAndBindTargets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dast-auth.json")
+	body := []byte(`{
+  "profiles": [
+    {
+      "name": " staging-bearer ",
+      "type": "Bearer",
+      "secretEnv": " STAGING_API_TOKEN ",
+      "sessionCheckUrl": " https://api.example.test/me ",
+      "sessionCheckPattern": " 200 OK "
+    }
+  ]
+}`)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write auth file: %v", err)
+	}
+
+	profiles, err := loadDASTAuthProfiles(path)
+	if err != nil {
+		t.Fatalf("load dast auth profiles: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 auth profile, got %d", len(profiles))
+	}
+	if profiles[0].Type != domain.DastAuthBearer {
+		t.Fatalf("expected bearer auth type, got %s", profiles[0].Type)
+	}
+	if profiles[0].Name != "staging-bearer" {
+		t.Fatalf("expected normalized auth profile name, got %q", profiles[0].Name)
+	}
+	if profiles[0].SecretEnv != "STAGING_API_TOKEN" {
+		t.Fatalf("expected normalized secret env, got %q", profiles[0].SecretEnv)
+	}
+
+	targets, err := bindDASTTargetAuthProfiles(
+		parseTargets([]string{"api=https://api.example.test", "admin=https://admin.example.test"}),
+		[]string{"api=staging-bearer"},
+		profiles,
+	)
+	if err != nil {
+		t.Fatalf("bind dast target auth profiles: %v", err)
+	}
+	if got := targets[0].AuthProfile; got != "staging-bearer" {
+		t.Fatalf("expected api target to reference auth profile, got %q", got)
+	}
+	if got := targets[0].AuthType; got != domain.DastAuthBearer {
+		t.Fatalf("expected api target auth type bearer, got %s", got)
+	}
+	if got := targets[1].AuthType; got != domain.DastAuthNone {
+		t.Fatalf("expected unmatched target auth type none, got %s", got)
+	}
+}
+
+func TestLoadDASTAuthProfilesRejectsInvalidFormProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dast-auth.json")
+	body := []byte(`[
+  {
+    "name": "staging-form",
+    "type": "form",
+    "loginPageUrl": "https://app.example.test/login",
+    "loginRequestUrl": "https://app.example.test/sessions",
+    "loginRequestBody": "username={%username%}&password={%password%}",
+    "usernameEnv": "STAGING_WEB_USER",
+    "passwordEnv": "STAGING_WEB_PASS"
+  }
+]`)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write auth file: %v", err)
+	}
+
+	_, err := loadDASTAuthProfiles(path)
+	if err == nil {
+		t.Fatalf("expected invalid form auth profile error")
+	}
+	if got, want := err.Error(), `dast auth profile "staging-form" requires sessionCheckUrl or loggedInRegex/loggedOutRegex for form auth verification`; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestDASTAuthTemplateCommandPrintsAllProfiles(t *testing.T) {
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+
+	cmd := app.dastCommand()
+	buffer := &bytes.Buffer{}
+	cmd.SetOut(buffer)
+	cmd.SetErr(buffer)
+	cmd.SetArgs([]string{"auth-template"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute dast auth-template: %v", err)
+	}
+
+	var payload struct {
+		Profiles []domain.DastAuthProfile `json:"profiles"`
+	}
+	if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal template output: %v", err)
+	}
+	if len(payload.Profiles) != 5 {
+		t.Fatalf("expected 5 auth templates, got %d", len(payload.Profiles))
+	}
+	if payload.Profiles[3].Type != domain.DastAuthBrowser {
+		t.Fatalf("expected browser template in output, got %s", payload.Profiles[3].Type)
+	}
+	if payload.Profiles[4].Type != domain.DastAuthForm {
+		t.Fatalf("expected form template in output, got %s", payload.Profiles[4].Type)
+	}
+}
+
+func TestDASTAuthTemplateCommandPrintsSingleTemplate(t *testing.T) {
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+
+	cmd := app.dastCommand()
+	buffer := &bytes.Buffer{}
+	cmd.SetOut(buffer)
+	cmd.SetErr(buffer)
+	cmd.SetArgs([]string{"auth-template", "form"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute dast auth-template form: %v", err)
+	}
+
+	var payload struct {
+		Profiles []domain.DastAuthProfile `json:"profiles"`
+	}
+	if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal template output: %v", err)
+	}
+	if len(payload.Profiles) != 1 {
+		t.Fatalf("expected 1 auth template, got %d", len(payload.Profiles))
+	}
+	profile := payload.Profiles[0]
+	if profile.Type != domain.DastAuthForm {
+		t.Fatalf("expected form template, got %s", profile.Type)
+	}
+	if profile.LoginRequestBody == "" || profile.LoggedInRegex == "" {
+		t.Fatalf("expected form template to include login and verification fields, got %+v", profile)
+	}
+}
+
 func TestTrimForSelectPreservesUTF8(t *testing.T) {
 	if got := trimForSelect("İnceleme akışı", 5); got != "İn..." {
 		t.Fatalf("expected rune-safe truncation, got %q", got)
@@ -250,6 +399,28 @@ func TestWriteRunExportUsesOwnerOnlyPermissions(t *testing.T) {
 	}
 }
 
+func TestWriteRunExportAppliesEvidencePolicyToReportArtifacts(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	app.cfg.ArtifactRedaction = true
+	app.cfg.ArtifactEncryptionKey = "test-secret"
+	app.cfg.ArtifactRetentionDays = 7
+
+	written, err := app.writeRunExport(run.ID, "html", filepath.Join(t.TempDir(), "report.html"), "")
+	if err != nil {
+		t.Fatalf("write run export: %v", err)
+	}
+	if !strings.HasSuffix(written, ".enc") {
+		t.Fatalf("expected encrypted report path, got %q", written)
+	}
+	body, err := os.ReadFile(written)
+	if err != nil {
+		t.Fatalf("read report export: %v", err)
+	}
+	if !strings.Contains(string(body), `"algorithm": "AES-256-GCM"`) {
+		t.Fatalf("expected encrypted report envelope, got %q", string(body))
+	}
+}
+
 func TestExportRunStdoutWritesRawStructuredContentOnly(t *testing.T) {
 	app, run, _, _ := newFocusedRunFilterFixture(t)
 	output := captureCLIStdout(t, func() error {
@@ -262,6 +433,49 @@ func TestExportRunStdoutWritesRawStructuredContentOnly(t *testing.T) {
 	}
 	if !json.Valid([]byte(trimmed)) {
 		t.Fatalf("expected valid JSON SARIF payload, got %q", trimmed)
+	}
+}
+
+func TestVerifySBOMAttestationPassesForMatchingRun(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	attestationPath := filepath.Join(t.TempDir(), "sbom-attestation.json")
+	content, err := app.service.Export(run.ID, "sbom-attestation", "")
+	if err != nil {
+		t.Fatalf("export attestation: %v", err)
+	}
+	if err := os.WriteFile(attestationPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write attestation: %v", err)
+	}
+
+	if err := app.verifySBOMAttestation(run.ID, attestationPath); err != nil {
+		t.Fatalf("verify sbom attestation: %v", err)
+	}
+}
+
+func TestRenderFindingDetailsShowsVEXFields(t *testing.T) {
+	app, _, _, _ := newFocusedRunFilterFixture(t)
+	finding := domain.Finding{
+		Category:           domain.CategorySCA,
+		Severity:           domain.SeverityHigh,
+		Title:              "Reachable package vulnerability",
+		Location:           "lodash",
+		Module:             "osv-scanner",
+		RuleID:             "CVE-2026-0001",
+		Reachability:       domain.ReachabilityReachable,
+		VEXStatus:          domain.VEXStatusNotAffected,
+		VEXJustification:   "vulnerable_code_not_present",
+		VEXStatementSource: "https://example.test/vex",
+		Fingerprint:        "fp-vex",
+	}
+
+	output := captureCLIStdout(t, func() error {
+		return app.renderFindingDetails(finding)
+	})
+
+	for _, want := range []string{"not affected", "vulnerable code not present", "https://example.test/vex"} {
+		if !strings.Contains(strings.ToLower(output), want) {
+			t.Fatalf("expected finding details output to contain %q, got %q", want, output)
+		}
 	}
 }
 
@@ -385,6 +599,614 @@ func TestRootCommandIncludesSimpleProjectSelectionCommands(t *testing.T) {
 		if _, _, err := root.Find([]string{use}); err != nil {
 			t.Fatalf("expected root command to include %s: %v", use, err)
 		}
+	}
+}
+
+func TestGitHubUploadSARIFCommandRequiresToken(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("PATH", t.TempDir())
+
+	cmd := app.githubCommand()
+	cmd.SetArgs([]string{"upload-sarif", run.ID, "--repo", "batu3384/ironsentinel"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "github auth token not found") {
+		t.Fatalf("expected auth error, got %v", err)
+	}
+}
+
+func TestGitHubUploadSARIFCommandPrefersProjectWorkspaceRoot(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	project, ok := app.service.GetProject(run.ProjectID)
+	if !ok {
+		t.Fatalf("expected run project %s to exist", run.ProjectID)
+	}
+	if strings.TrimSpace(project.LocationHint) == "" {
+		t.Fatalf("expected project location hint for run %s", run.ID)
+	}
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	workdir := t.TempDir()
+	otherDir := t.TempDir()
+	if err := os.Chdir(otherDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	app.cwd = workdir
+
+	binDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "git-cwd.txt")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s' "$(pwd)" > %q
+case "$*" in
+  "remote get-url origin") printf '%%s\n' 'git@github.com:batu3384/ironsentinel.git' ;;
+  "rev-parse HEAD") printf '%%s\n' 'abc123def456' ;;
+  "symbolic-ref --quiet --short HEAD") printf '%%s\n' 'main' ;;
+  *) exit 1 ;;
+esac
+`, marker)
+	gitPath := filepath.Join(binDir, "git")
+	if err := os.WriteFile(gitPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake git: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("GITHUB_TOKEN", "ghs-test")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
+
+	cmd := app.githubCommand()
+	cmd.SetArgs([]string{"upload-sarif", run.ID})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected upload to fail after exercising cwd resolution")
+	}
+	recorded, readErr := os.ReadFile(marker)
+	if readErr != nil {
+		t.Fatalf("read git cwd marker: %v", readErr)
+	}
+	if got, want := filepath.Clean(strings.TrimSpace(string(recorded))), filepath.Clean(project.LocationHint); got != want {
+		t.Fatalf("expected github upload to prefer project workspace root %s, got %s", want, got)
+	}
+}
+
+func TestGitHubSubmitDepsCommandFailsWithoutDependencyInventory(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	t.Setenv("GITHUB_TOKEN", "ghs-test")
+	t.Setenv("GH_TOKEN", "")
+
+	cmd := app.githubCommand()
+	cmd.SetArgs([]string{"submit-deps", run.ProjectID, "--repo", "batu3384/ironsentinel"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no dependency inventory available") {
+		t.Fatalf("expected dependency inventory error, got %v", err)
+	}
+}
+
+func TestGitHubSubmitDepsMetadataRootPrefersProjectWorkspaceRoot(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	project, ok := app.service.GetProject(run.ProjectID)
+	if !ok {
+		t.Fatalf("expected run project %s to exist", run.ProjectID)
+	}
+
+	app.cwd = t.TempDir()
+	if got, want := app.githubDependencyMetadataRoot(project), strings.TrimSpace(project.LocationHint); got != want {
+		t.Fatalf("expected submit-deps metadata root %q, got %q", want, got)
+	}
+}
+
+func TestGitHubDependencyPackagesPreferCanonicalPURLAndSkipInvalidVersions(t *testing.T) {
+	app := &App{}
+	sbomPath := filepath.Join(t.TempDir(), "sbom.json")
+	sbom := `{"components":[{"name":"github.com/spf13/cobra","version":"1.9.1","type":"library","purl":"pkg:go/github.com/spf13/cobra@1.9.1"},{"name":"github.com/spf13/pflag","version":"5.0.0","type":"library"},{"name":"github.com/spf13/skip","version":"","type":"library"}]}`
+	if err := os.WriteFile(sbomPath, []byte(sbom), 0o644); err != nil {
+		t.Fatalf("write sbom: %v", err)
+	}
+
+	packages, err := app.githubDependencyPackages(domain.ScanRun{
+		ArtifactRefs: []domain.ArtifactRef{{Kind: "sbom", URI: sbomPath}},
+	})
+	if err != nil {
+		t.Fatalf("github dependency packages: %v", err)
+	}
+	if len(packages) != 2 {
+		t.Fatalf("expected invalid package to be skipped while keeping canonical and fallback packages, got %+v", packages)
+	}
+	if got, want := packages[0].PackageURL, "pkg:go/github.com/spf13/cobra@1.9.1"; got != want {
+		t.Fatalf("expected canonical purl %q, got %q", want, got)
+	}
+	if got, want := packages[0].Ecosystem, "go"; got != want {
+		t.Fatalf("expected ecosystem from canonical purl %q, got %q", want, got)
+	}
+	if got, want := packages[0].Relationship, "indirect"; got != want {
+		t.Fatalf("expected indirect relationship fallback, got %q", got)
+	}
+	if got, want := packages[1].Relationship, "indirect"; got != want {
+		t.Fatalf("expected indirect relationship fallback for generic package, got %q", got)
+	}
+	if got, want := packages[1].Ecosystem, "generic"; got != want {
+		t.Fatalf("expected neutral fallback ecosystem %q, got %q", want, got)
+	}
+	if got := strings.TrimSpace(packages[1].PackageURL); got != "" {
+		t.Fatalf("expected no canonical package url for fallback package, got %q", got)
+	}
+}
+
+func TestGitHubDependencyRunPrefersNewestUsableInventory(t *testing.T) {
+	app, project := newTestTUIApp(t)
+
+	olderRun, err := app.service.EnqueueScan(project.ID, domain.ScanProfile{Mode: domain.ModeSafe, Coverage: domain.CoverageCore, Modules: []string{"syft"}})
+	if err != nil {
+		t.Fatalf("enqueue older run: %v", err)
+	}
+	newerRun, err := app.service.EnqueueScan(project.ID, domain.ScanProfile{Mode: domain.ModeSafe, Coverage: domain.CoverageCore, Modules: []string{"secret-heuristics"}})
+	if err != nil {
+		t.Fatalf("enqueue newer run: %v", err)
+	}
+
+	sbomPath := filepath.Join(t.TempDir(), "sbom.json")
+	sbom := `{"components":[{"name":"github.com/spf13/cobra","version":"1.9.1","type":"library","purl":"pkg:go/github.com/spf13/cobra@1.9.1"}]}`
+	if err := os.WriteFile(sbomPath, []byte(sbom), 0o644); err != nil {
+		t.Fatalf("write sbom: %v", err)
+	}
+
+	olderRun.StartedAt = time.Now().Add(-2 * time.Hour)
+	olderRun.Status = domain.ScanCompleted
+	finishedOlder := time.Now().Add(-90 * time.Minute)
+	olderRun.FinishedAt = &finishedOlder
+	olderRun.ArtifactRefs = []domain.ArtifactRef{{Kind: "sbom", URI: sbomPath}}
+	newerRun.StartedAt = time.Now()
+	newerRun.Status = domain.ScanRunning
+	newerRun.ArtifactRefs = []domain.ArtifactRef{{Kind: "sbom", URI: sbomPath}}
+	updateRunRecord(t, app, olderRun)
+	updateRunRecord(t, app, newerRun)
+
+	got, err := app.githubDependencyRun(project, "")
+	if err != nil {
+		t.Fatalf("github dependency run: %v", err)
+	}
+	if got == nil || got.ID != olderRun.ID {
+		t.Fatalf("expected older usable run %s, got %+v", olderRun.ID, got)
+	}
+}
+
+func TestCampaignsCommandIncludesCreateListShowAndPublish(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	root := app.RootCommand()
+
+	for _, use := range []string{"campaigns create", "campaigns list", "campaigns show", "campaigns add-findings", "campaigns publish-github"} {
+		parts := strings.Split(use, " ")
+		if _, _, err := root.Find(parts); err != nil {
+			t.Fatalf("expected command %q: %v", use, err)
+		}
+	}
+}
+
+func TestGitHubCreateIssuesFromCampaignCommandExists(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	cmd := app.githubCommand()
+	if _, _, err := cmd.Find([]string{"create-issues-from-campaign"}); err != nil {
+		t.Fatalf("expected GitHub campaign publish wrapper: %v", err)
+	}
+}
+
+func TestCampaignsCreateCommandPersistsCampaign(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	root := app.RootCommand()
+	findings := app.service.ListFindings(run.ID)
+	if len(findings) == 0 {
+		t.Fatalf("expected run findings for campaign creation")
+	}
+	selectedFingerprint := findings[0].Fingerprint
+
+	buffer := &bytes.Buffer{}
+	root.SetOut(buffer)
+	root.SetErr(buffer)
+	root.SetArgs([]string{
+		"campaigns", "create",
+		"--project", run.ProjectID,
+		"--run", run.ID,
+		"--id", "cmp-cli-1",
+		"--title", "Fix reachable secrets",
+		"--summary", "Turn the finding set into one remediation issue",
+		"--finding", selectedFingerprint,
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute campaigns create: %v", err)
+	}
+
+	campaignStore, err := store.NewStateStore(filepath.Join(app.cfg.DataDir, "state.db"))
+	if err != nil {
+		t.Fatalf("open campaign store: %v", err)
+	}
+	t.Cleanup(func() { _ = campaignStore.Close() })
+	got, ok := campaignStore.GetCampaign("cmp-cli-1")
+	if !ok {
+		t.Fatalf("expected campaign cmp-cli-1 to be persisted")
+	}
+	if got.ProjectID != run.ProjectID || got.SourceRunID != run.ID {
+		t.Fatalf("unexpected campaign payload: %+v", got)
+	}
+	if len(got.FindingFingerprints) == 0 {
+		t.Fatalf("expected campaign fingerprints to be populated")
+	}
+	if got.Title != "Fix reachable secrets" {
+		t.Fatalf("unexpected campaign title: %q", got.Title)
+	}
+	if len(got.FindingFingerprints) != 1 || got.FindingFingerprints[0] != selectedFingerprint {
+		t.Fatalf("expected explicit campaign membership to be preserved, got %+v", got.FindingFingerprints)
+	}
+}
+
+func TestCampaignScopedFindingsFiltersToCampaignMembership(t *testing.T) {
+	findings := []domain.Finding{
+		{Fingerprint: "fp-1", Title: "One"},
+		{Fingerprint: "fp-2", Title: "Two"},
+	}
+
+	scoped := campaignScopedFindings(findings, []string{"fp-2"})
+	if len(scoped) != 1 || scoped[0].Fingerprint != "fp-2" {
+		t.Fatalf("expected only campaign finding membership, got %+v", scoped)
+	}
+}
+
+func TestCampaignPublishCommandsRequireRepoFlag(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+
+	campaigns := app.campaignsPublishGitHubCommand()
+	if flag := campaigns.Flags().Lookup("repo"); flag == nil || flag.Annotations == nil || len(flag.Annotations[cobra.BashCompOneRequiredFlag]) == 0 {
+		t.Fatalf("expected campaigns publish-github repo flag to be required")
+	}
+
+	github := app.githubCreateIssuesFromCampaignCommand()
+	if flag := github.Flags().Lookup("repo"); flag == nil || flag.Annotations == nil || len(flag.Annotations[cobra.BashCompOneRequiredFlag]) == 0 {
+		t.Fatalf("expected github create-issues-from-campaign repo flag to be required")
+	}
+}
+
+func TestGitHubPublishingDocsAndHelpSurface(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	architecture, err := os.ReadFile(filepath.Join("..", "..", "docs", "architecture.md"))
+	if err != nil {
+		t.Fatalf("read architecture doc: %v", err)
+	}
+
+	readmeText := string(readme)
+	for _, want := range []string{
+		"## GitHub Publishing",
+		"ironsentinel github export-custom-patterns",
+		"ironsentinel github upload-sarif <run-id>",
+		"ironsentinel github submit-deps <project-id>",
+		"ironsentinel setup install-pre-push",
+	} {
+		if !strings.Contains(readmeText, want) {
+			t.Fatalf("expected README to mention %q", want)
+		}
+	}
+
+	architectureText := string(architecture)
+	for _, want := range []string{
+		"### GitHub integration",
+		"internal/integrations/github",
+		"code scanning",
+		"dependency graph",
+		"custom pattern",
+		"pre-push",
+	} {
+		if !strings.Contains(architectureText, want) {
+			t.Fatalf("expected architecture doc to mention %q", want)
+		}
+	}
+
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+	root := app.RootCommand()
+
+	buffer := &bytes.Buffer{}
+	root.SetOut(buffer)
+	root.SetErr(buffer)
+	root.SetArgs([]string{"github", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute github help: %v", err)
+	}
+
+	help := buffer.String()
+	for _, want := range []string{
+		"GitHub publishing",
+		"export-custom-patterns",
+		"upload-sarif",
+		"submit-deps",
+		"push-protect",
+		"Export IronSentinel secret patterns in GitHub custom pattern form",
+		"Upload SARIF to GitHub code scanning",
+		"Submit dependencies to the GitHub dependency graph",
+		"Block pushes that contain high-confidence secrets",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("expected github help to mention %q, got %q", want, help)
+		}
+	}
+
+	buffer.Reset()
+	root.SetArgs([]string{"setup", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute setup help: %v", err)
+	}
+	setupHelp := buffer.String()
+	for _, want := range []string{
+		"install-pre-push",
+		"Install the IronSentinel pre-push guard into the current repository",
+	} {
+		if !strings.Contains(setupHelp, want) {
+			t.Fatalf("expected setup help to mention %q, got %q", want, setupHelp)
+		}
+	}
+}
+
+func TestDASTDocsAndHelpSurface(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	architecture, err := os.ReadFile(filepath.Join("..", "..", "docs", "architecture.md"))
+	if err != nil {
+		t.Fatalf("read architecture doc: %v", err)
+	}
+
+	readmeText := string(readme)
+	for _, want := range []string{
+		"## Authenticated DAST Profiles",
+		"ironsentinel dast auth-template",
+		"ironsentinel dast auth-template form",
+		"--target-auth api=staging-bearer",
+	} {
+		if !strings.Contains(readmeText, want) {
+			t.Fatalf("expected README to mention %q", want)
+		}
+	}
+
+	architectureText := string(architecture)
+	for _, want := range []string{
+		"`dast auth-template [type]`",
+		"reusable auth profile definitions",
+		"target intent, auth material, and execution policy separate",
+	} {
+		if !strings.Contains(architectureText, want) {
+			t.Fatalf("expected architecture doc to mention %q", want)
+		}
+	}
+
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+	root := app.RootCommand()
+
+	buffer := &bytes.Buffer{}
+	root.SetOut(buffer)
+	root.SetErr(buffer)
+	root.SetArgs([]string{"dast", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute dast help: %v", err)
+	}
+
+	help := buffer.String()
+	for _, want := range []string{
+		"plan",
+		"auth-template",
+		"Print reusable DAST auth profile JSON templates",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("expected dast help to mention %q, got %q", want, help)
+		}
+	}
+}
+
+func TestSetupInstallPrePushCommandWritesManagedHook(t *testing.T) {
+	repo := t.TempDir()
+	runGitForTest(t, repo, "init", "-b", "main")
+
+	app, err := New(config.Load())
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.cwd = repo
+
+	cmd := app.setupCommand()
+	cmd.SetArgs([]string{"install-pre-push", "--binary", "/usr/local/bin/ironsentinel"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute install-pre-push: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(repo, ".git", "hooks", "pre-push"))
+	if err != nil {
+		t.Fatalf("read pre-push hook: %v", err)
+	}
+	text := string(body)
+	for _, want := range []string{"Managed by IronSentinel", "/usr/local/bin/ironsentinel", "github push-protect"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected installed hook to contain %q, got %q", want, text)
+		}
+	}
+}
+
+func TestGitHubExportCustomPatternsCommandPrintsJSONManifest(t *testing.T) {
+	app, err := New(config.Load())
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.lang = i18n.EN
+	app.catalog = i18n.New(i18n.EN)
+
+	cmd := app.githubCommand()
+	buffer := &bytes.Buffer{}
+	cmd.SetOut(buffer)
+	cmd.SetErr(buffer)
+	cmd.SetArgs([]string{"export-custom-patterns"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute export-custom-patterns: %v", err)
+	}
+
+	text := buffer.String()
+	for _, want := range []string{
+		`"version": "1"`,
+		`IronSentinel / secret.github_pat`,
+		`IronSentinel / secret.aws_access_key`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected command output to contain %q, got %q", want, text)
+		}
+	}
+}
+
+func runGitForTest(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
+}
+
+func TestRootCommandCompatibilityCommandsAreHiddenButCallable(t *testing.T) {
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+
+	root := app.RootCommand()
+	for _, use := range []string{"console", "open", "pick", "tui"} {
+		command, _, err := root.Find([]string{use})
+		if err != nil {
+			t.Fatalf("expected compatibility command %s to remain callable: %v", use, err)
+		}
+		if !command.Hidden {
+			t.Fatalf("expected compatibility command %s to be hidden from primary help", use)
+		}
+		if strings.TrimSpace(command.Deprecated) == "" {
+			t.Fatalf("expected compatibility command %s to advertise a migration hint", use)
+		}
+	}
+}
+
+func updateRunRecord(t *testing.T, app *App, run domain.ScanRun) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", filepath.Join(app.cfg.DataDir, "state.db"))
+	if err != nil {
+		t.Fatalf("open state db: %v", err)
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Fatalf("close state db: %v", closeErr)
+		}
+	}()
+
+	payload, err := json.Marshal(run)
+	if err != nil {
+		t.Fatalf("marshal run: %v", err)
+	}
+
+	if _, err := db.Exec(`UPDATE runs SET started_at = ?, payload = ? WHERE id = ?`, run.StartedAt.UTC().Format(time.RFC3339Nano), string(payload), run.ID); err != nil {
+		t.Fatalf("update run record: %v", err)
+	}
+}
+
+func TestRootHelpOmitsCompatibilityCommands(t *testing.T) {
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+
+	root := app.RootCommand()
+	buffer := &bytes.Buffer{}
+	root.SetOut(buffer)
+	root.SetErr(buffer)
+	root.SetArgs([]string{"--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute help: %v", err)
+	}
+
+	help := buffer.String()
+	for _, hidden := range []string{"console", "open", "pick", "tui"} {
+		if strings.Contains(help, hidden) {
+			t.Fatalf("expected help output to omit hidden compatibility command %q, got %q", hidden, help)
+		}
+	}
+	for _, visible := range []string{"overview", "scan", "findings", "runtime"} {
+		if !strings.Contains(help, visible) {
+			t.Fatalf("expected help output to include %q, got %q", visible, help)
+		}
+	}
+}
+
+func TestAppRuntimeDoctorUsesInjectedOverride(t *testing.T) {
+	calls := 0
+	app := &App{
+		runtimeDoctorFn: func(profile domain.ScanProfile, strictVersions, requireIntegrity bool) domain.RuntimeDoctor {
+			calls++
+			return domain.RuntimeDoctor{
+				Mode:             profile.Mode,
+				StrictVersions:   strictVersions,
+				RequireIntegrity: requireIntegrity,
+				Ready:            true,
+			}
+		},
+	}
+
+	doctor := app.runtimeDoctor(domain.ScanProfile{Mode: domain.ModeActive}, true, true)
+
+	if !doctor.Ready {
+		t.Fatalf("expected injected runtime doctor to be returned")
+	}
+	if doctor.Mode != domain.ModeActive || !doctor.StrictVersions || !doctor.RequireIntegrity {
+		t.Fatalf("expected injected runtime doctor to preserve inputs, got %+v", doctor)
+	}
+	if calls != 1 {
+		t.Fatalf("expected injected runtime doctor to be called once, got %d", calls)
+	}
+}
+
+func TestAppRuntimeDoctorCachesByProfile(t *testing.T) {
+	calls := 0
+	app := &App{
+		runtimeDoctorFn: func(profile domain.ScanProfile, strictVersions, requireIntegrity bool) domain.RuntimeDoctor {
+			calls++
+			return domain.RuntimeDoctor{
+				Mode:  profile.Mode,
+				Ready: true,
+			}
+		},
+	}
+	profile := domain.ScanProfile{
+		Mode:    domain.ModeDeep,
+		Modules: []string{"semgrep", "gitleaks"},
+	}
+
+	first := app.runtimeDoctor(profile, false, false)
+	second := app.runtimeDoctor(profile, false, false)
+
+	if !first.Ready || !second.Ready {
+		t.Fatalf("expected cached runtime doctor results to stay ready")
+	}
+	if calls != 1 {
+		t.Fatalf("expected runtime doctor result to be cached, got %d calls", calls)
 	}
 }
 

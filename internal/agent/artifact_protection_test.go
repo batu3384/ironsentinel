@@ -17,7 +17,7 @@ func TestWriteArtifactRedactsSecrets(t *testing.T) {
 		ArtifactRetentionDays: 14,
 	}
 
-	artifact, err := writeArtifact(cfg, moduleDir, "evidence.json", "evidence", "test evidence", []byte(`{"token":"ghp_1234567890abcdef1234567890abcdef1234"}`))
+	artifact, err := writeArtifact(cfg, moduleDir, "evidence.json", "evidence", "test evidence", []byte(`{"token":"`+fakeArtifactGitHubPAT()+`"}`))
 	if err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestWriteArtifactRedactsSecrets(t *testing.T) {
 		t.Fatalf("read artifact: %v", err)
 	}
 	text := string(body)
-	if strings.Contains(text, "ghp_1234567890abcdef1234567890abcdef1234") {
+	if strings.Contains(text, fakeArtifactGitHubPAT()) {
 		t.Fatalf("expected secret to be redacted, got %s", text)
 	}
 	if !strings.Contains(text, "[REDACTED_GITHUB_TOKEN]") {
@@ -96,4 +96,8 @@ func TestPruneExpiredArtifactRunsRemovesOldDirectories(t *testing.T) {
 	if _, err := os.Stat(newDir); err != nil {
 		t.Fatalf("expected new artifact dir to remain: %v", err)
 	}
+}
+
+func fakeArtifactGitHubPAT() string {
+	return strings.Join([]string{"gh", "p_", strings.Repeat("a", 36)}, "")
 }

@@ -128,7 +128,7 @@ func resolveContainerEngine(preferred string) (string, string) {
 func detectRootless(engineName, enginePath string) bool {
 	switch engineName {
 	case "podman":
-		output, err := runProbeCommand(enginePath, "info", "--format", "json")
+		output, err := runHostProbeCommand(enginePath, "info", "--format", "json")
 		if err != nil {
 			return false
 		}
@@ -145,7 +145,7 @@ func detectRootless(engineName, enginePath string) bool {
 		}
 		return strings.Contains(strings.ToLower(string(output)), `"rootless":true`)
 	case "docker":
-		output, err := runProbeCommand(enginePath, "info", "--format", "{{json .SecurityOptions}}")
+		output, err := runHostProbeCommand(enginePath, "info", "--format", "{{json .SecurityOptions}}")
 		if err != nil {
 			return false
 		}
@@ -169,6 +169,6 @@ func detectImagePresent(enginePath, image string) bool {
 	if strings.TrimSpace(enginePath) == "" || strings.TrimSpace(image) == "" {
 		return false
 	}
-	_, err := runProbeCommand(enginePath, "image", "inspect", image)
+	_, err := runHostProbeCommand(enginePath, "image", "inspect", image)
 	return err == nil
 }

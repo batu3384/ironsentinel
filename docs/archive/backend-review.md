@@ -1,5 +1,7 @@
 # Backend Review
 
+> Historical snapshot: this review predates the current architecture contract in [`docs/architecture.md`](/Users/batuhanyuksel/Documents/security/docs/architecture.md) and should be treated as archive material.
+
 ## Executive Summary
 
 The backend/runtime layer is already a real local AppSec platform foundation. It has a usable domain model, normalized finding flow, policy evaluation, diff/gate logic, artifacts, mirrors, runtime doctor checks, and scanner bootstrap concepts. The main problem is not missing architecture; it is missing hardening. The product still behaves like an embedded monolith with a lightweight persistence layer and partially complete scanner orchestration.

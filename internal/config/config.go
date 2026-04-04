@@ -47,30 +47,30 @@ func Load() Config {
 	return Config{
 		AppRoot:               appRoot,
 		ProjectRoot:           cwd,
-		DataDir:               envOr("APPSEC_DATA_DIR", filepath.Join(projectRuntimeRoot, "data")),
-		OutputDir:             envOr("APPSEC_OUTPUT_DIR", filepath.Join(projectRuntimeRoot, "output")),
-		DistDir:               envOr("AEGIS_DIST_DIR", filepath.Join(appRoot, "dist")),
-		MirrorDir:             envOr("APPSEC_MIRROR_DIR", filepath.Join(sharedRuntimeRoot, "mirrors")),
-		ToolsDir:              envOr("AEGIS_TOOLS_DIR", filepath.Join(sharedRuntimeRoot, "tools", "bin")),
-		YARARulesDir:          envOr("APPSEC_YARA_RULES_DIR", filepath.Join(sharedRuntimeRoot, "rules", "yara")),
-		ArtifactRetentionDays: envInt("APPSEC_ARTIFACT_RETENTION_DAYS", 30),
-		ArtifactRedaction:     envBool("APPSEC_ARTIFACT_REDACTION", true),
-		ArtifactEncryptionKey: envOr("APPSEC_ARTIFACT_ENCRYPTION_KEY", ""),
+		DataDir:               envFirst(filepath.Join(projectRuntimeRoot, "data"), "IRONSENTINEL_DATA_DIR", "APPSEC_DATA_DIR"),
+		OutputDir:             envFirst(filepath.Join(projectRuntimeRoot, "output"), "IRONSENTINEL_OUTPUT_DIR", "APPSEC_OUTPUT_DIR"),
+		DistDir:               envFirst(filepath.Join(appRoot, "dist"), "IRONSENTINEL_DIST_DIR", "AEGIS_DIST_DIR"),
+		MirrorDir:             envFirst(filepath.Join(sharedRuntimeRoot, "mirrors"), "IRONSENTINEL_MIRROR_DIR", "APPSEC_MIRROR_DIR"),
+		ToolsDir:              envFirst(filepath.Join(sharedRuntimeRoot, "tools", "bin"), "IRONSENTINEL_TOOLS_DIR", "AEGIS_TOOLS_DIR"),
+		YARARulesDir:          envFirst(filepath.Join(sharedRuntimeRoot, "rules", "yara"), "IRONSENTINEL_YARA_RULES_DIR", "APPSEC_YARA_RULES_DIR"),
+		ArtifactRetentionDays: envIntFirst(30, "IRONSENTINEL_ARTIFACT_RETENTION_DAYS", "APPSEC_ARTIFACT_RETENTION_DAYS"),
+		ArtifactRedaction:     envBoolFirst(true, "IRONSENTINEL_ARTIFACT_REDACTION", "APPSEC_ARTIFACT_REDACTION"),
+		ArtifactEncryptionKey: envFirst("", "IRONSENTINEL_ARTIFACT_ENCRYPTION_KEY", "APPSEC_ARTIFACT_ENCRYPTION_KEY"),
 		DefaultLanguage:       defaultLanguage(),
-		BundleLockPath:        envOr("APPSEC_BUNDLE_LOCK_PATH", filepath.Join(appRoot, "scanner-bundle.lock.json")),
-		InstallScript:         envOr("APPSEC_INSTALL_SCRIPT", installScript),
-		ImageBuildScript:      envOr("APPSEC_IMAGE_BUILD_SCRIPT", imageBuildScript),
-		ContainerfilePath:     envOr("APPSEC_CONTAINERFILE_PATH", filepath.Join(appRoot, "deploy", "scanner-bundle.Containerfile")),
-		SandboxMode:           envOr("AEGIS_SANDBOX_MODE", "auto"),
-		ContainerEngine:       envOr("AEGIS_CONTAINER_ENGINE", "auto"),
-		ContainerImage:        envOr("AEGIS_CONTAINER_IMAGE", "ghcr.io/batu3384/ironsentinel-scanner-bundle:latest"),
-		ContainerPlatform:     envOr("AEGIS_CONTAINER_PLATFORM", defaultContainerPlatform()),
-		OfflineMode:           envBool("APPSEC_OFFLINE_MODE", false),
+		BundleLockPath:        envFirst(filepath.Join(appRoot, "scanner-bundle.lock.json"), "IRONSENTINEL_BUNDLE_LOCK_PATH", "APPSEC_BUNDLE_LOCK_PATH"),
+		InstallScript:         envFirst(installScript, "IRONSENTINEL_INSTALL_SCRIPT", "APPSEC_INSTALL_SCRIPT"),
+		ImageBuildScript:      envFirst(imageBuildScript, "IRONSENTINEL_IMAGE_BUILD_SCRIPT", "APPSEC_IMAGE_BUILD_SCRIPT"),
+		ContainerfilePath:     envFirst(filepath.Join(appRoot, "deploy", "scanner-bundle.Containerfile"), "IRONSENTINEL_CONTAINERFILE_PATH", "APPSEC_CONTAINERFILE_PATH"),
+		SandboxMode:           envFirst("auto", "IRONSENTINEL_SANDBOX_MODE", "AEGIS_SANDBOX_MODE"),
+		ContainerEngine:       envFirst("auto", "IRONSENTINEL_CONTAINER_ENGINE", "AEGIS_CONTAINER_ENGINE"),
+		ContainerImage:        envFirst("ghcr.io/batu3384/ironsentinel-scanner-bundle:latest", "IRONSENTINEL_CONTAINER_IMAGE", "AEGIS_CONTAINER_IMAGE"),
+		ContainerPlatform:     envFirst(defaultContainerPlatform(), "IRONSENTINEL_CONTAINER_PLATFORM", "AEGIS_CONTAINER_PLATFORM"),
+		OfflineMode:           envBoolFirst(false, "IRONSENTINEL_OFFLINE_MODE", "APPSEC_OFFLINE_MODE"),
 	}
 }
 
 func resolveAppRoot(cwd, buildRoot, fallback string) string {
-	for _, envKey := range []string{"APPSEC_HOME", "AEGIS_HOME"} {
+	for _, envKey := range []string{"IRONSENTINEL_HOME", "APPSEC_HOME", "AEGIS_HOME"} {
 		if root := strings.TrimSpace(os.Getenv(envKey)); root != "" {
 			return root
 		}
@@ -130,8 +130,10 @@ func defaultContainerPlatform() string {
 }
 
 func defaultLanguage() string {
-	if explicit := strings.TrimSpace(os.Getenv("AEGIS_LANG")); explicit != "" {
-		return explicit
+	for _, key := range []string{"IRONSENTINEL_LANG", "AEGIS_LANG", "APPSEC_LANG"} {
+		if explicit := strings.TrimSpace(os.Getenv(key)); explicit != "" {
+			return explicit
+		}
 	}
 	for _, key := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
 		if value := strings.ToLower(strings.TrimSpace(os.Getenv(key))); strings.HasPrefix(value, "tr") {
@@ -141,37 +143,45 @@ func defaultLanguage() string {
 	return "en"
 }
 
-func envOr(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
+func envFirst(fallback string, keys ...string) string {
+	for _, key := range keys {
+		value := os.Getenv(key)
+		if value != "" {
+			return value
+		}
 	}
-	return value
+	return fallback
 }
 
-func envBool(key string, fallback bool) bool {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
+func envBoolFirst(fallback bool, keys ...string) bool {
+	for _, key := range keys {
+		value := os.Getenv(key)
+		if value == "" {
+			continue
+		}
+		switch value {
+		case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+			return true
+		case "0", "false", "FALSE", "no", "NO", "off", "OFF":
+			return false
+		default:
+			return fallback
+		}
 	}
-	switch value {
-	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
-		return true
-	case "0", "false", "FALSE", "no", "NO", "off", "OFF":
-		return false
-	default:
-		return fallback
-	}
+	return fallback
 }
 
-func envInt(key string, fallback int) int {
-	value := os.Getenv(key)
-	if value == "" {
+func envIntFirst(fallback int, keys ...string) int {
+	for _, key := range keys {
+		value := os.Getenv(key)
+		if value == "" {
+			continue
+		}
+		parsed, err := strconv.Atoi(value)
+		if err == nil {
+			return parsed
+		}
 		return fallback
 	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
+	return fallback
 }

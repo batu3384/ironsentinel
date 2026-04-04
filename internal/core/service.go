@@ -15,8 +15,10 @@ import (
 	"github.com/batu3384/ironsentinel/internal/domain"
 	"github.com/batu3384/ironsentinel/internal/policy"
 	"github.com/batu3384/ironsentinel/internal/reports"
+	"github.com/batu3384/ironsentinel/internal/sbom"
 	"github.com/batu3384/ironsentinel/internal/store"
 	"github.com/batu3384/ironsentinel/internal/util"
+	"github.com/batu3384/ironsentinel/internal/vex"
 )
 
 type Service struct {
@@ -101,12 +103,12 @@ func (s *Service) GetProject(id string) (domain.Project, bool) {
 
 func (s *Service) ListRuns() []domain.ScanRun {
 	runs := s.store.ListRuns()
-	applyRunSummaries(runs, s.store.ListFindings(""))
+	applyRunSummaries(runs, s.loadFindings(""))
 	return runs
 }
 
 func (s *Service) PortfolioData() PortfolioData {
-	findings := s.store.ListFindings("")
+	findings := s.loadFindings("")
 	runs := s.store.ListRuns()
 	applyRunSummaries(runs, findings)
 	return PortfolioData{
@@ -122,7 +124,7 @@ func (s *Service) GetRun(id string) (domain.ScanRun, bool) {
 	if !ok {
 		return domain.ScanRun{}, false
 	}
-	run.Summary = domain.RecalculateSummary(s.store.ListFindings(run.ID), run.Profile.SeverityGate)
+	run.Summary = domain.RecalculateSummary(s.loadFindings(run.ID), run.Profile.SeverityGate)
 	return run, true
 }
 
@@ -145,10 +147,10 @@ func (s *Service) GetRunDelta(runID, baselineRunID string) (domain.RunDelta, dom
 		return domain.RunDelta{}, domain.ScanRun{}, nil, err
 	}
 
-	currentFindings := s.store.ListFindings(current.ID)
+	currentFindings := s.loadFindings(current.ID)
 	var baselineFindings []domain.Finding
 	if baseline != nil {
-		baselineFindings = s.store.ListFindings(baseline.ID)
+		baselineFindings = s.loadFindings(baseline.ID)
 	}
 
 	delta := domain.CalculateRunDelta(currentFindings, baselineFindings, current.ID, baselineIDValue(baseline), current.ProjectID)
@@ -156,32 +158,51 @@ func (s *Service) GetRunDelta(runID, baselineRunID string) (domain.RunDelta, dom
 }
 
 func (s *Service) EvaluateGate(runID, baselineRunID string, threshold domain.Severity) (domain.RunDelta, domain.ScanRun, *domain.ScanRun, []domain.Finding, error) {
-	delta, current, baseline, err := s.GetRunDelta(runID, baselineRunID)
+	return s.EvaluateGateWithVEX(runID, baselineRunID, threshold, "")
+}
+
+func (s *Service) EvaluatePolicy(runID, baselineRunID, policyID string) (domain.PolicyEvaluation, domain.ScanRun, *domain.ScanRun, error) {
+	return s.EvaluatePolicyWithVEX(runID, baselineRunID, policyID, "")
+}
+
+func (s *Service) EvaluateGateWithVEX(runID, baselineRunID string, threshold domain.Severity, vexPath string) (domain.RunDelta, domain.ScanRun, *domain.ScanRun, []domain.Finding, error) {
+	delta, current, baseline, _, err := s.getRunDeltaWithVEX(runID, baselineRunID, vexPath)
 	if err != nil {
 		return domain.RunDelta{}, domain.ScanRun{}, nil, nil, err
 	}
 
 	blocking := domain.FilterFindingsAtOrAboveSeverity(delta.NewFindings, threshold)
-	return delta, current, baseline, blocking, nil
+	filtered := make([]domain.Finding, 0, len(blocking))
+	for _, finding := range blocking {
+		if vex.SuppressesFinding(finding) {
+			continue
+		}
+		filtered = append(filtered, finding)
+	}
+	return delta, current, baseline, filtered, nil
 }
 
-func (s *Service) EvaluatePolicy(runID, baselineRunID, policyID string) (domain.PolicyEvaluation, domain.ScanRun, *domain.ScanRun, error) {
-	delta, current, baseline, err := s.GetRunDelta(runID, baselineRunID)
+func (s *Service) EvaluatePolicyWithVEX(runID, baselineRunID, policyID, vexPath string) (domain.PolicyEvaluation, domain.ScanRun, *domain.ScanRun, error) {
+	delta, current, baseline, _, err := s.getRunDeltaWithVEX(runID, baselineRunID, vexPath)
 	if err != nil {
 		return domain.PolicyEvaluation{}, domain.ScanRun{}, nil, err
 	}
 
 	pack := policy.Builtin(policyID)
-	evaluation := policy.Evaluate(pack, current.ID, baselineIDValue(baseline), s.store.ListFindings(current.ID), delta)
+	evaluation := policy.Evaluate(pack, current.ID, baselineIDValue(baseline), s.loadFindingsWithVEX(current, vexPath), delta)
 	return evaluation, current, baseline, nil
 }
 
 func (s *Service) ListFindings(runID string) []domain.Finding {
-	return s.store.ListFindings(runID)
+	return s.loadFindings(runID)
 }
 
 func (s *Service) GetFinding(runID, fingerprint string) (domain.Finding, bool) {
-	return s.store.FindFinding(runID, fingerprint)
+	finding, ok := s.store.FindFinding(runID, fingerprint)
+	if !ok {
+		return domain.Finding{}, false
+	}
+	return s.enrichStoredFinding(finding), true
 }
 
 func (s *Service) ListSuppressions() []domain.Suppression {
@@ -208,14 +229,260 @@ func (s *Service) DeleteFindingTriage(fingerprint string) error {
 	return s.store.DeleteFindingTriage(fingerprint)
 }
 
+func (s *Service) CreateCampaign(input domain.Campaign) (domain.Campaign, error) {
+	if strings.TrimSpace(input.Title) == "" {
+		return domain.Campaign{}, errors.New("campaign title is required")
+	}
+	if _, ok := s.store.GetProject(input.ProjectID); !ok {
+		return domain.Campaign{}, fmt.Errorf("project not found: %s", input.ProjectID)
+	}
+	if strings.TrimSpace(input.SourceRunID) == "" {
+		return domain.Campaign{}, errors.New("campaign source run is required")
+	}
+	run, ok := s.store.GetRun(input.SourceRunID)
+	if !ok {
+		return domain.Campaign{}, fmt.Errorf("campaign source run not found: %s", input.SourceRunID)
+	}
+	if run.ProjectID != input.ProjectID {
+		return domain.Campaign{}, fmt.Errorf("campaign source run %s does not belong to project %s", input.SourceRunID, input.ProjectID)
+	}
+	if strings.TrimSpace(input.BaselineRunID) != "" {
+		baseline, ok := s.store.GetRun(input.BaselineRunID)
+		if !ok {
+			return domain.Campaign{}, fmt.Errorf("campaign baseline run not found: %s", input.BaselineRunID)
+		}
+		if baseline.ProjectID != input.ProjectID {
+			return domain.Campaign{}, fmt.Errorf("campaign baseline run %s does not belong to project %s", input.BaselineRunID, input.ProjectID)
+		}
+	}
+	fingerprints, err := s.resolveCampaignFingerprints(input.ProjectID, input.SourceRunID, input.FindingFingerprints)
+	if err != nil {
+		return domain.Campaign{}, err
+	}
+	now := time.Now().UTC()
+	campaign := domain.NewCampaign(
+		input.ID,
+		input.ProjectID,
+		input.Title,
+		input.Summary,
+		input.SourceRunID,
+		input.BaselineRunID,
+		fingerprints,
+		now,
+	)
+	if err := s.store.SaveCampaign(campaign); err != nil {
+		return domain.Campaign{}, err
+	}
+	return campaign, nil
+}
+
+func (s *Service) AddFindingsToCampaign(campaignID string, fingerprints []string) (domain.Campaign, error) {
+	campaign, ok := s.store.GetCampaign(campaignID)
+	if !ok {
+		return domain.Campaign{}, fmt.Errorf("campaign not found: %s", campaignID)
+	}
+	resolved, err := s.resolveCampaignFingerprints(campaign.ProjectID, campaign.SourceRunID, fingerprints)
+	if err != nil {
+		return domain.Campaign{}, err
+	}
+	return s.store.UpdateCampaign(campaignID, func(campaign domain.Campaign) (domain.Campaign, error) {
+		combined := append(append([]string(nil), campaign.FindingFingerprints...), resolved...)
+		now := time.Now().UTC()
+		updated := domain.NewCampaign(
+			campaign.ID,
+			campaign.ProjectID,
+			campaign.Title,
+			campaign.Summary,
+			campaign.SourceRunID,
+			campaign.BaselineRunID,
+			combined,
+			now,
+		)
+		updated.Status = campaign.Status
+		updated.Owner = campaign.Owner
+		updated.DueAt = campaign.DueAt
+		updated.PublishedIssues = campaign.PublishedIssues
+		updated.CreatedAt = campaign.CreatedAt
+		updated.UpdatedAt = now
+		return updated, nil
+	})
+}
+
+func (s *Service) resolveCampaignFingerprints(projectID, runID string, fingerprints []string) ([]string, error) {
+	resolved := make([]string, 0, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		fingerprint = strings.TrimSpace(fingerprint)
+		if fingerprint == "" {
+			continue
+		}
+
+		finding, ok := s.store.FindFinding(runID, fingerprint)
+		if !ok {
+			if strings.TrimSpace(runID) != "" {
+				return nil, fmt.Errorf("campaign finding not found in run %s: %s", runID, fingerprint)
+			}
+			return nil, fmt.Errorf("campaign finding not found: %s", fingerprint)
+		}
+		if finding.ProjectID != projectID {
+			return nil, fmt.Errorf("campaign finding %s does not belong to project %s", fingerprint, projectID)
+		}
+		resolved = append(resolved, fingerprint)
+	}
+	if len(resolved) == 0 {
+		return nil, errors.New("campaign requires at least one valid finding fingerprint")
+	}
+	return resolved, nil
+}
+
 func (s *Service) Export(runID, format, baselineRunID string) (string, error) {
-	delta, run, baseline, err := s.GetRunDelta(runID, baselineRunID)
+	return s.ExportWithVEX(runID, format, baselineRunID, "")
+}
+
+func (s *Service) ExportWithVEX(runID, format, baselineRunID, vexPath string) (string, error) {
+	report, err := s.BuildRunReportWithVEX(runID, baselineRunID, vexPath)
 	if err != nil {
 		return "", err
 	}
-	project, _ := s.store.GetProject(run.ProjectID)
-	findings := enrichFindings(project, s.store.ListFindings(runID))
-	return reports.Export(format, run, baseline, findings, delta, trendPointsForProject(s.store.ListRuns(), run.ProjectID))
+	return reports.Export(format, report)
+}
+
+func (s *Service) BuildRunReport(runID, baselineRunID string) (domain.RunReport, error) {
+	return s.BuildRunReportWithVEX(runID, baselineRunID, "")
+}
+
+func (s *Service) BuildRunReportWithVEX(runID, baselineRunID, vexPath string) (domain.RunReport, error) {
+	delta, run, baseline, vexSummary, err := s.getRunDeltaWithVEX(runID, baselineRunID, vexPath)
+	if err != nil {
+		return domain.RunReport{}, err
+	}
+	findings := s.loadFindingsWithVEX(run, vexPath)
+	run.Summary = domain.RecalculateSummary(findings, run.Profile.SeverityGate)
+
+	report := domain.RunReport{
+		Run:             run,
+		Baseline:        baseline,
+		Findings:        make([]domain.RunReportFinding, 0, len(findings)),
+		Delta:           delta,
+		Trends:          trendPointsForProject(s.store.ListRuns(), run.ProjectID),
+		ModuleStats:     reports.ModuleExecutionStats(run.ModuleResults),
+		ModuleSummaries: reports.BuildModuleSummaries(run.ModuleResults),
+		VEX:             vexSummary,
+	}
+	changeByFingerprint := reports.BuildChangeIndex(delta)
+	for _, finding := range findings {
+		report.Findings = append(report.Findings, domain.RunReportFinding{
+			Finding: finding,
+			Change:  reports.DefaultChange(changeByFingerprint[finding.Fingerprint]),
+		})
+	}
+	return report, nil
+}
+
+func (s *Service) loadFindings(runID string) []domain.Finding {
+	return s.enrichStoredFindings(s.store.ListFindings(runID))
+}
+
+func (s *Service) loadFindingsWithVEX(run domain.ScanRun, vexPath string) []domain.Finding {
+	findings := s.loadFindings(run.ID)
+	if strings.TrimSpace(vexPath) == "" {
+		return findings
+	}
+	document, err := loadOpenVEX(vexPath)
+	if err != nil {
+		return findings
+	}
+	applied, _ := vex.Apply(findings, document, sbom.ProductsByComponentName(run.ArtifactRefs))
+	return applied
+}
+
+func loadOpenVEX(path string) (vex.Document, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return vex.Document{}, err
+	}
+	return vex.ParseOpenVEX(body)
+}
+
+func (s *Service) getRunDeltaWithVEX(runID, baselineRunID, vexPath string) (domain.RunDelta, domain.ScanRun, *domain.ScanRun, domain.VEXSummary, error) {
+	current, ok := s.store.GetRun(runID)
+	if !ok {
+		return domain.RunDelta{}, domain.ScanRun{}, nil, domain.VEXSummary{}, fmt.Errorf("run not found: %s", runID)
+	}
+
+	baseline, err := s.resolveBaselineRun(current, baselineRunID)
+	if err != nil {
+		return domain.RunDelta{}, domain.ScanRun{}, nil, domain.VEXSummary{}, err
+	}
+
+	currentFindings := s.loadFindings(current.ID)
+	var summary domain.VEXSummary
+	if strings.TrimSpace(vexPath) != "" {
+		document, err := loadOpenVEX(vexPath)
+		if err != nil {
+			return domain.RunDelta{}, domain.ScanRun{}, nil, domain.VEXSummary{}, err
+		}
+		currentFindings, summary = vex.Apply(currentFindings, document, sbom.ProductsByComponentName(current.ArtifactRefs))
+	}
+
+	var baselineFindings []domain.Finding
+	if baseline != nil {
+		baselineFindings = s.loadFindings(baseline.ID)
+		if strings.TrimSpace(vexPath) != "" {
+			document, err := loadOpenVEX(vexPath)
+			if err != nil {
+				return domain.RunDelta{}, domain.ScanRun{}, nil, domain.VEXSummary{}, err
+			}
+			baselineFindings, _ = vex.Apply(baselineFindings, document, sbom.ProductsByComponentName(baseline.ArtifactRefs))
+		}
+	}
+
+	delta := domain.CalculateRunDelta(currentFindings, baselineFindings, current.ID, baselineIDValue(baseline), current.ProjectID)
+	return delta, current, baseline, summary, nil
+}
+
+func (s *Service) enrichStoredFindings(findings []domain.Finding) []domain.Finding {
+	if len(findings) == 0 {
+		return nil
+	}
+
+	projects := s.store.ListProjects()
+	projectByID := make(map[string]domain.Project, len(projects))
+	for _, project := range projects {
+		projectByID[project.ID] = project
+	}
+
+	indexesByProject := make(map[string][]int)
+	findingsByProject := make(map[string][]domain.Finding)
+	for index, finding := range findings {
+		indexesByProject[finding.ProjectID] = append(indexesByProject[finding.ProjectID], index)
+		findingsByProject[finding.ProjectID] = append(findingsByProject[finding.ProjectID], finding)
+	}
+
+	enriched := make([]domain.Finding, len(findings))
+	for projectID, items := range findingsByProject {
+		project, ok := projectByID[projectID]
+		if !ok {
+			project, _ = s.store.GetProject(projectID)
+		}
+		group := enrichFindings(project, items)
+		for offset, findingIndex := range indexesByProject[projectID] {
+			enriched[findingIndex] = group[offset]
+		}
+	}
+
+	for index, finding := range enriched {
+		if finding.ID != "" || finding.Fingerprint != "" {
+			continue
+		}
+		project, _ := s.store.GetProject(findings[index].ProjectID)
+		enriched[index] = enrichFinding(project, findings[index])
+	}
+	return enriched
+}
+
+func (s *Service) enrichStoredFinding(finding domain.Finding) domain.Finding {
+	project, _ := s.store.GetProject(finding.ProjectID)
+	return enrichFinding(project, finding)
 }
 
 func (s *Service) EnqueueScan(projectID string, profile domain.ScanProfile) (domain.ScanRun, error) {
@@ -353,7 +620,7 @@ func applyRunSummaries(runs []domain.ScanRun, findings []domain.Finding) {
 	}
 }
 
-func (s *Service) DASTPlan(projectID string, targets []domain.DastTarget, active bool) domain.DastPlan {
+func (s *Service) DASTPlan(projectID string, targets []domain.DastTarget, authProfiles []domain.DastAuthProfile, active bool) domain.DastPlan {
 	policy := "baseline"
 	if active {
 		policy = "active"
@@ -361,15 +628,34 @@ func (s *Service) DASTPlan(projectID string, targets []domain.DastTarget, active
 		policy = "authenticated"
 	}
 
+	steps := []string{
+		"Validate ownership of each target before any authenticated or active probe.",
+		"Import OpenAPI or route manifests when available to improve crawl coverage.",
+		"Start with passive ZAP baseline, then switch to active checks only on staging targets.",
+		"Allow signed Nuclei templates only and normalize evidence into the unified finding model.",
+	}
+
+	for _, target := range targets {
+		resolvedTarget, authProfile, err := domain.ResolveDastTargetAuth(target, authProfiles)
+		if err != nil || authProfile == nil {
+			continue
+		}
+		authStep := fmt.Sprintf(
+			"Bind target %s to auth profile %s (%s) before crawl expansion.",
+			resolvedTarget.Name,
+			authProfile.Name,
+			authProfile.Type.String(),
+		)
+		steps = append(steps, authStep)
+		if authProfile.SessionCheckURL != "" {
+			steps = append(steps, fmt.Sprintf("Verify the session against %s before active probes.", authProfile.SessionCheckURL))
+		}
+	}
+
 	return domain.DastPlan{
 		ProjectID: projectID,
 		Policy:    policy,
-		Steps: []string{
-			"Validate ownership of each target before any authenticated or active probe.",
-			"Import OpenAPI or route manifests when available to improve crawl coverage.",
-			"Start with passive ZAP baseline, then switch to active checks only on staging targets.",
-			"Allow signed Nuclei templates only and normalize evidence into the unified finding model.",
-		},
+		Steps:     steps,
 	}
 }
 

@@ -7,26 +7,46 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/sbom"
 )
 
-func Export(format string, run domain.ScanRun, baseline *domain.ScanRun, findings []domain.Finding, delta domain.RunDelta, trends []domain.RunTrendPoint) (string, error) {
-	run.Summary = domain.RecalculateSummary(findings, run.Profile.SeverityGate)
-	changeByFingerprint := buildChangeIndex(delta)
+func Export(format string, report domain.RunReport) (string, error) {
 	switch strings.ToLower(format) {
 	case "sarif":
-		return exportSARIF(run, baseline, findings, delta, changeByFingerprint, trends)
+		return exportSARIF(report)
 	case "csv":
-		return exportCSV(findings, changeByFingerprint)
+		return exportCSV(report)
 	case "html":
-		return exportHTML(run, baseline, findings, delta, changeByFingerprint, trends), nil
+		return exportHTML(report), nil
+	case "openvex":
+		return exportOpenVEX(report)
+	case "sbom-attestation":
+		return exportSBOMAttestation(report)
 	default:
 		return "", fmt.Errorf("unsupported export format: %s", format)
 	}
 }
 
-func exportSARIF(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.Finding, delta domain.RunDelta, changeByFingerprint map[string]domain.FindingChange, trends []domain.RunTrendPoint) (string, error) {
+func reportFindings(report domain.RunReport) []domain.Finding {
+	findings := make([]domain.Finding, 0, len(report.Findings))
+	for _, item := range report.Findings {
+		findings = append(findings, item.Finding)
+	}
+	return findings
+}
+
+func reportChangeIndex(report domain.RunReport) map[string]domain.FindingChange {
+	index := make(map[string]domain.FindingChange, len(report.Findings))
+	for _, item := range report.Findings {
+		index[item.Finding.Fingerprint] = DefaultChange(item.Change)
+	}
+	return index
+}
+
+func exportSARIF(report domain.RunReport) (string, error) {
 	type result struct {
 		RuleID  string `json:"ruleId"`
 		Level   string `json:"level"`
@@ -53,23 +73,23 @@ func exportSARIF(run domain.ScanRun, baseline *domain.ScanRun, findings []domain
 					},
 				},
 				"automationDetails": map[string]any{
-					"id": run.ID,
+					"id": report.Run.ID,
 				},
 				"properties": map[string]any{
-					"baselineRunId":    baselineID(baseline),
-					"newFindings":      delta.CountsByChange[domain.FindingNew],
-					"existingFindings": delta.CountsByChange[domain.FindingExisting],
-					"resolvedFindings": delta.CountsByChange[domain.FindingResolved],
-					"moduleExecution":  moduleExecutionStats(run.ModuleResults),
-					"trend":            trends,
+					"baselineRunId":    baselineID(report.Baseline),
+					"newFindings":      report.Delta.CountsByChange[domain.FindingNew],
+					"existingFindings": report.Delta.CountsByChange[domain.FindingExisting],
+					"resolvedFindings": report.Delta.CountsByChange[domain.FindingResolved],
+					"moduleExecution":  report.ModuleStats,
+					"trend":            report.Trends,
 					"moduleResultSummaries": func() []map[string]any {
-						items := make([]map[string]any, 0, len(run.ModuleResults))
-						for _, module := range run.ModuleResults {
+						items := make([]map[string]any, 0, len(report.ModuleSummaries))
+						for _, module := range report.ModuleSummaries {
 							items = append(items, map[string]any{
 								"name":         module.Name,
 								"status":       module.Status,
 								"findingCount": module.FindingCount,
-								"attempts":     displayModuleAttempts(module),
+								"attempts":     displayModuleSummaryAttempts(module),
 								"durationMs":   module.DurationMs,
 								"timedOut":     module.TimedOut,
 								"failureKind":  string(module.FailureKind),
@@ -80,30 +100,34 @@ func exportSARIF(run domain.ScanRun, baseline *domain.ScanRun, findings []domain
 					}(),
 				},
 				"results": func() []result {
-					items := make([]result, 0, len(findings))
-					for _, finding := range findings {
+					items := make([]result, 0, len(report.Findings))
+					for _, reportFinding := range report.Findings {
+						finding := reportFinding.Finding
 						entry := result{
 							RuleID: string(finding.RuleID),
 							Level:  string(finding.Severity),
 							Properties: map[string]any{
-								"category":     finding.Category,
-								"module":       finding.Module,
-								"triageStatus": defaultStatus(finding.Status),
-								"tags":         finding.Tags,
-								"owner":        finding.Owner,
-								"note":         finding.Note,
-								"fingerprint":  finding.Fingerprint,
-								"change":       defaultChange(changeByFingerprint[finding.Fingerprint]),
-								"cvss31":       finding.CVSS31,
-								"cvss40":       finding.CVSS40,
-								"epssScore":    finding.EPSSScore,
-								"epssPercent":  finding.EPSSPercent,
-								"kev":          finding.KEV,
-								"cwes":         finding.CWEs,
-								"compliance":   finding.Compliance,
-								"priority":     finding.Priority,
-								"attackChain":  finding.AttackChain,
-								"related":      finding.Related,
+								"category":         finding.Category,
+								"module":           finding.Module,
+								"reachability":     finding.Reachability.String(),
+								"triageStatus":     DefaultStatus(finding.Status),
+								"tags":             finding.Tags,
+								"owner":            finding.Owner,
+								"note":             finding.Note,
+								"vexStatus":        finding.VEXStatus,
+								"vexJustification": finding.VEXJustification,
+								"fingerprint":      finding.Fingerprint,
+								"change":           DefaultChange(reportFinding.Change),
+								"cvss31":           finding.CVSS31,
+								"cvss40":           finding.CVSS40,
+								"epssScore":        finding.EPSSScore,
+								"epssPercent":      finding.EPSSPercent,
+								"kev":              finding.KEV,
+								"cwes":             finding.CWEs,
+								"compliance":       finding.Compliance,
+								"priority":         finding.Priority,
+								"attackChain":      finding.AttackChain,
+								"related":          finding.Related,
 							},
 						}
 						entry.Message.Text = finding.Title
@@ -132,19 +156,23 @@ func exportSARIF(run domain.ScanRun, baseline *domain.ScanRun, findings []domain
 	return string(bytes), nil
 }
 
-func exportCSV(findings []domain.Finding, changeByFingerprint map[string]domain.FindingChange) (string, error) {
+func exportCSV(report domain.RunReport) (string, error) {
 	var builder strings.Builder
 	writer := csv.NewWriter(&builder)
-	if err := writer.Write([]string{"severity", "change", "triage_status", "category", "module", "rule_id", "title", "location", "cvss31", "cvss40", "epss_score", "epss_percent", "kev", "cwes", "compliance", "priority", "owner", "tags", "note", "remediation"}); err != nil {
+	if err := writer.Write([]string{"severity", "change", "triage_status", "category", "module", "reachability", "vex_status", "vex_justification", "rule_id", "title", "location", "cvss31", "cvss40", "epss_score", "epss_percent", "kev", "cwes", "compliance", "priority", "owner", "tags", "note", "remediation"}); err != nil {
 		return "", err
 	}
-	for _, finding := range findings {
+	for _, reportFinding := range report.Findings {
+		finding := reportFinding.Finding
 		if err := writer.Write([]string{
 			string(finding.Severity),
-			string(defaultChange(changeByFingerprint[finding.Fingerprint])),
-			string(defaultStatus(finding.Status)),
+			string(DefaultChange(reportFinding.Change)),
+			string(DefaultStatus(finding.Status)),
 			string(finding.Category),
 			finding.Module,
+			finding.Reachability.String(),
+			string(finding.VEXStatus),
+			finding.VEXJustification,
 			finding.RuleID,
 			finding.Title,
 			finding.Location,
@@ -168,7 +196,91 @@ func exportCSV(findings []domain.Finding, changeByFingerprint map[string]domain.
 	return builder.String(), writer.Error()
 }
 
-func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.Finding, delta domain.RunDelta, changeByFingerprint map[string]domain.FindingChange, trends []domain.RunTrendPoint) string {
+func exportOpenVEX(report domain.RunReport) (string, error) {
+	type product struct {
+		ID string `json:"@id"`
+	}
+	type statement struct {
+		Vulnerability struct {
+			Name string `json:"name"`
+		} `json:"vulnerability"`
+		Products      []product        `json:"products"`
+		Status        domain.VEXStatus `json:"status"`
+		Justification string           `json:"justification,omitempty"`
+	}
+	type document struct {
+		Context    string      `json:"@context"`
+		ID         string      `json:"@id"`
+		Author     string      `json:"author"`
+		Role       string      `json:"role"`
+		Timestamp  time.Time   `json:"timestamp"`
+		Version    int         `json:"version"`
+		Statements []statement `json:"statements"`
+	}
+
+	productsByName := sbom.ProductsByComponentName(report.Run.ArtifactRefs)
+	doc := document{
+		Context:    "https://openvex.dev/ns/v0.2.0",
+		ID:         fmt.Sprintf("https://github.com/batu3384/ironsentinel/openvex/%s", report.Run.ID),
+		Author:     "IronSentinel",
+		Role:       "Tool",
+		Timestamp:  time.Now().UTC(),
+		Version:    1,
+		Statements: make([]statement, 0),
+	}
+	seen := make(map[string]struct{})
+	for _, item := range report.Findings {
+		finding := item.Finding
+		if finding.Category != domain.CategorySCA || strings.TrimSpace(finding.RuleID) == "" {
+			continue
+		}
+		key := finding.RuleID + "|" + strings.ToLower(strings.TrimSpace(finding.Location))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		entry := statement{
+			Status:        finding.VEXStatus,
+			Justification: finding.VEXJustification,
+		}
+		if entry.Status == "" {
+			entry.Status = domain.VEXStatusUnderInvestigation
+		}
+		entry.Vulnerability.Name = finding.RuleID
+
+		for _, purl := range productsByName[strings.ToLower(strings.TrimSpace(finding.Location))] {
+			entry.Products = append(entry.Products, product{ID: purl})
+		}
+		if len(entry.Products) == 0 && strings.TrimSpace(finding.Location) != "" {
+			entry.Products = append(entry.Products, product{ID: "pkg:generic/" + strings.ToLower(strings.TrimSpace(finding.Location))})
+		}
+		doc.Statements = append(doc.Statements, entry)
+	}
+
+	body, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func exportSBOMAttestation(report domain.RunReport) (string, error) {
+	attestation, err := sbom.BuildAttestation(report.Run)
+	if err != nil {
+		return "", err
+	}
+	attestation.Timestamp = time.Now().UTC()
+	body, err := json.MarshalIndent(attestation, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func exportHTML(report domain.RunReport) string {
+	findings := reportFindings(report)
+	changeByFingerprint := reportChangeIndex(report)
 	priorityFindings := append([]domain.Finding(nil), findings...)
 	sort.Slice(priorityFindings, func(i, j int) bool {
 		if priorityFindings[i].Priority == priorityFindings[j].Priority {
@@ -177,8 +289,8 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 		return priorityFindings[i].Priority > priorityFindings[j].Priority
 	})
 
-	rows := make([]string, 0, len(findings))
-	for _, finding := range findings {
+	rows := make([]string, 0, len(priorityFindings))
+	for _, finding := range priorityFindings {
 		tagOwner := strings.Join(finding.Tags, ", ")
 		if strings.TrimSpace(finding.Owner) != "" {
 			if tagOwner != "" {
@@ -187,15 +299,16 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 			tagOwner += finding.Owner
 		}
 		rows = append(rows, fmt.Sprintf(
-			`<tr><td>%s</td><td>%s</td><td>%s</td><td>%.1f</td><td>%.2f</td><td>%t</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s / %s</td><td>%s</td></tr>`,
+			`<tr><td>%s</td><td>%s</td><td>%s</td><td>%.1f</td><td>%.2f</td><td>%t</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s / %s</td><td>%s</td></tr>`,
 			finding.Severity,
-			htmlEscape(string(defaultChange(changeByFingerprint[finding.Fingerprint]))),
-			htmlEscape(string(defaultStatus(finding.Status))),
+			htmlEscape(string(DefaultChange(changeByFingerprint[finding.Fingerprint]))),
+			htmlEscape(string(DefaultStatus(finding.Status))),
 			finding.CVSS31,
 			finding.EPSSScore,
 			finding.KEV,
 			finding.Category,
 			finding.Module,
+			htmlEscape(finding.Reachability.String()),
 			htmlEscape(finding.RuleID),
 			htmlEscape(finding.Title),
 			htmlEscape(finding.Location),
@@ -205,8 +318,8 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 		))
 	}
 
-	resolvedRows := make([]string, 0, len(delta.ResolvedFindings))
-	for _, finding := range delta.ResolvedFindings {
+	resolvedRows := make([]string, 0, len(report.Delta.ResolvedFindings))
+	for _, finding := range report.Delta.ResolvedFindings {
 		resolvedRows = append(resolvedRows, fmt.Sprintf(
 			`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
 			finding.Severity,
@@ -215,13 +328,13 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 		))
 	}
 
-	moduleRows := make([]string, 0, len(run.ModuleResults))
-	for _, module := range run.ModuleResults {
+	moduleRows := make([]string, 0, len(report.ModuleSummaries))
+	for _, module := range report.ModuleSummaries {
 		moduleRows = append(moduleRows, fmt.Sprintf(
 			`<tr><td>%s</td><td>%s</td><td>%d</td><td>%dms</td><td>%s</td><td>%t</td><td>%d</td><td>%s</td></tr>`,
 			htmlEscape(module.Name),
 			htmlEscape(string(module.Status)),
-			displayModuleAttempts(module),
+			displayModuleSummaryAttempts(module),
 			module.DurationMs,
 			htmlEscape(defaultModuleFailure(module.FailureKind)),
 			module.TimedOut,
@@ -229,11 +342,11 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 			htmlEscape(module.Summary),
 		))
 	}
-	moduleStats := moduleExecutionStats(run.ModuleResults)
+	moduleStats := report.ModuleStats
 	moduleSection := renderModuleSection(moduleRows)
 	executiveSummary := renderExecutiveSummary(priorityFindings)
-	severityOverview := renderSeverityOverview(run)
-	trendChart := renderTrendChart(run, trends)
+	severityOverview := renderSeverityOverview(report.Run)
+	trendChart := renderTrendChart(report.Run, report.Trends)
 	heatmap := renderHeatmap(findings)
 	complianceSection := renderComplianceSection(findings)
 	drilldown := renderFindingDrilldown(priorityFindings, changeByFingerprint)
@@ -309,7 +422,7 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
   %s
   <table>
     <thead>
-      <tr><th>Severity</th><th>Change</th><th>Triage</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Category</th><th>Module</th><th>Rule</th><th>Title</th><th>Location</th><th>CWE / Compliance</th><th>Tags / Owner</th></tr>
+      <tr><th>Severity</th><th>Change</th><th>Triage</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Category</th><th>Module</th><th>Reachability</th><th>Rule</th><th>Title</th><th>Location</th><th>CWE / Compliance</th><th>Tags / Owner</th></tr>
     </thead>
     <tbody>%s</tbody>
   </table>
@@ -320,19 +433,19 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
   %s
 </body>
 </html>`,
-		htmlEscape(run.ID),
-		htmlEscape(run.ID),
-		htmlEscape(baselineID(baseline)),
-		htmlEscape(string(run.Status)),
+		htmlEscape(report.Run.ID),
+		htmlEscape(report.Run.ID),
+		htmlEscape(baselineID(report.Baseline)),
+		htmlEscape(string(report.Run.Status)),
 		len(findings),
-		run.Summary.CountsByStatus[domain.FindingOpen],
-		run.Summary.CountsByStatus[domain.FindingInvestigating],
-		run.Summary.CountsByStatus[domain.FindingAcceptedRisk],
-		run.Summary.CountsByStatus[domain.FindingFalsePositive],
-		run.Summary.CountsByStatus[domain.FindingFixed],
-		delta.CountsByChange[domain.FindingNew],
-		delta.CountsByChange[domain.FindingExisting],
-		delta.CountsByChange[domain.FindingResolved],
+		report.Run.Summary.CountsByStatus[domain.FindingOpen],
+		report.Run.Summary.CountsByStatus[domain.FindingInvestigating],
+		report.Run.Summary.CountsByStatus[domain.FindingAcceptedRisk],
+		report.Run.Summary.CountsByStatus[domain.FindingFalsePositive],
+		report.Run.Summary.CountsByStatus[domain.FindingFixed],
+		report.Delta.CountsByChange[domain.FindingNew],
+		report.Delta.CountsByChange[domain.FindingExisting],
+		report.Delta.CountsByChange[domain.FindingResolved],
 		moduleStats["failed"],
 		moduleStats["skipped"],
 		moduleStats["retried"],
@@ -348,14 +461,14 @@ func exportHTML(run domain.ScanRun, baseline *domain.ScanRun, findings []domain.
 	)
 }
 
-func defaultStatus(status domain.FindingStatus) domain.FindingStatus {
+func DefaultStatus(status domain.FindingStatus) domain.FindingStatus {
 	if status == "" {
 		return domain.FindingOpen
 	}
 	return status
 }
 
-func defaultChange(change domain.FindingChange) domain.FindingChange {
+func DefaultChange(change domain.FindingChange) domain.FindingChange {
 	if change == "" {
 		return domain.FindingNew
 	}
@@ -369,7 +482,7 @@ func baselineID(baseline *domain.ScanRun) string {
 	return baseline.ID
 }
 
-func buildChangeIndex(delta domain.RunDelta) map[string]domain.FindingChange {
+func BuildChangeIndex(delta domain.RunDelta) map[string]domain.FindingChange {
 	index := make(map[string]domain.FindingChange, len(delta.NewFindings)+len(delta.ExistingFindings)+len(delta.ResolvedFindings))
 	for _, finding := range delta.NewFindings {
 		index[finding.Fingerprint] = domain.FindingNew
@@ -555,7 +668,7 @@ func renderFindingDrilldown(findings []domain.Finding, changeByFingerprint map[s
 			finding.CVSS40,
 			finding.EPSSScore,
 			finding.Priority,
-			htmlEscape(string(defaultChange(changeByFingerprint[finding.Fingerprint]))),
+			htmlEscape(string(DefaultChange(changeByFingerprint[finding.Fingerprint]))),
 			htmlEscape(strings.Join(finding.CWEs, ", ")),
 			htmlEscape(strings.Join(finding.Compliance, ", ")),
 			htmlEscape(finding.Remediation),
@@ -585,7 +698,7 @@ func renderModuleSection(rows []string) string {
   </table>`, strings.Join(rows, ""))
 }
 
-func moduleExecutionStats(modules []domain.ModuleResult) map[string]int {
+func ModuleExecutionStats(modules []domain.ModuleResult) map[string]int {
 	stats := map[string]int{
 		"failed":  0,
 		"skipped": 0,
@@ -605,7 +718,34 @@ func moduleExecutionStats(modules []domain.ModuleResult) map[string]int {
 	return stats
 }
 
+func BuildModuleSummaries(modules []domain.ModuleResult) []domain.RunReportModuleSummary {
+	summaries := make([]domain.RunReportModuleSummary, 0, len(modules))
+	for _, module := range modules {
+		summaries = append(summaries, domain.RunReportModuleSummary{
+			Name:         module.Name,
+			Status:       module.Status,
+			FindingCount: module.FindingCount,
+			Attempts:     displayModuleAttempts(module),
+			DurationMs:   module.DurationMs,
+			TimedOut:     module.TimedOut,
+			FailureKind:  module.FailureKind,
+			Summary:      module.Summary,
+		})
+	}
+	return summaries
+}
+
 func displayModuleAttempts(module domain.ModuleResult) int {
+	if module.Attempts > 0 {
+		return module.Attempts
+	}
+	if module.Status == domain.ModuleSkipped {
+		return 0
+	}
+	return 1
+}
+
+func displayModuleSummaryAttempts(module domain.RunReportModuleSummary) int {
 	if module.Attempts > 0 {
 		return module.Attempts
 	}

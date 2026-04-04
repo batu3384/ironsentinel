@@ -10,6 +10,7 @@ import (
 
 	"github.com/batu3384/ironsentinel/internal/config"
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/evidence"
 )
 
 type moduleManifest struct {
@@ -36,33 +37,11 @@ type moduleManifest struct {
 
 func ensureModuleDir(root, module string) (string, error) {
 	moduleDir := filepath.Join(root, sanitizeName(module))
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-		return "", err
-	}
-	return moduleDir, nil
+	return moduleDir, os.MkdirAll(moduleDir, 0o755)
 }
 
 func writeArtifact(cfg config.Config, moduleDir, filename, kind, label string, body []byte) (domain.ArtifactRef, error) {
-	protectedName, protectedBody, redacted, encrypted, expiresAt, err := newArtifactProtector(cfg).protect(kind, filename, body)
-	if err != nil {
-		return domain.ArtifactRef{}, err
-	}
-	target := filepath.Join(moduleDir, protectedName)
-	if err := os.WriteFile(target, protectedBody, 0o644); err != nil {
-		return domain.ArtifactRef{}, err
-	}
-	absolute, err := filepath.Abs(target)
-	if err != nil {
-		return domain.ArtifactRef{}, err
-	}
-	return domain.ArtifactRef{
-		Kind:      kind,
-		Label:     label,
-		URI:       absolute,
-		Redacted:  redacted,
-		Encrypted: encrypted,
-		ExpiresAt: expiresAt,
-	}, nil
+	return evidence.PolicyFromConfig(cfg).WriteFile(filepath.Join(moduleDir, filename), kind, label, body)
 }
 
 func copyArtifact(cfg config.Config, moduleDir, sourcePath, filename, kind, label string) (domain.ArtifactRef, error) {

@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -164,6 +165,59 @@ func AllFindingChanges() []FindingChange {
 	}
 }
 
+type Reachability string
+
+const (
+	ReachabilityReachable        Reachability = "reachable"
+	ReachabilityPossible         Reachability = "possible"
+	ReachabilityUnknown          Reachability = "unknown"
+	ReachabilityRepository       Reachability = "repository"
+	ReachabilityImage            Reachability = "image"
+	ReachabilityInfrastructure   Reachability = "infrastructure"
+	ReachabilityExecutionSurface Reachability = "execution-surface"
+	ReachabilityNotApplicable    Reachability = "not-applicable"
+)
+
+func NormalizeReachability(value string) Reachability {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return Reachability("")
+	}
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	normalized = strings.Join(strings.Fields(normalized), "-")
+
+	switch Reachability(normalized) {
+	case ReachabilityReachable,
+		ReachabilityPossible,
+		ReachabilityUnknown,
+		ReachabilityRepository,
+		ReachabilityImage,
+		ReachabilityInfrastructure,
+		ReachabilityExecutionSurface,
+		ReachabilityNotApplicable:
+		return Reachability(normalized)
+	default:
+		return Reachability(normalized)
+	}
+}
+
+func (r Reachability) String() string {
+	return string(NormalizeReachability(string(r)))
+}
+
+func (r Reachability) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.String())
+}
+
+func (r *Reachability) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*r = NormalizeReachability(value)
+	return nil
+}
+
 type PolicyOutcome string
 
 const (
@@ -172,24 +226,88 @@ const (
 	PolicyOutcomeFail PolicyOutcome = "fail"
 )
 
+type DastAuthType string
+
+const (
+	DastAuthNone    DastAuthType = "none"
+	DastAuthBearer  DastAuthType = "bearer"
+	DastAuthHeader  DastAuthType = "header"
+	DastAuthBasic   DastAuthType = "basic"
+	DastAuthBrowser DastAuthType = "browser"
+	DastAuthForm    DastAuthType = "form"
+)
+
+func NormalizeDastAuthType(value string) DastAuthType {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return DastAuthType("")
+	}
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	normalized = strings.Join(strings.Fields(normalized), "-")
+
+	switch DastAuthType(normalized) {
+	case DastAuthNone, DastAuthBearer, DastAuthHeader, DastAuthBasic, DastAuthBrowser, DastAuthForm:
+		return DastAuthType(normalized)
+	default:
+		return DastAuthType(normalized)
+	}
+}
+
+func (t DastAuthType) String() string {
+	return string(NormalizeDastAuthType(string(t)))
+}
+
+func (t DastAuthType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
+func (t *DastAuthType) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*t = NormalizeDastAuthType(value)
+	return nil
+}
+
+type DastAuthProfile struct {
+	Name                string       `json:"name"`
+	Type                DastAuthType `json:"type"`
+	HeaderName          string       `json:"headerName,omitempty"`
+	SecretEnv           string       `json:"secretEnv,omitempty"`
+	UsernameEnv         string       `json:"usernameEnv,omitempty"`
+	PasswordEnv         string       `json:"passwordEnv,omitempty"`
+	LoginPageURL        string       `json:"loginPageUrl,omitempty"`
+	LoginPageWait       int          `json:"loginPageWait,omitempty"`
+	BrowserID           string       `json:"browserId,omitempty"`
+	LoginRequestURL     string       `json:"loginRequestUrl,omitempty"`
+	LoginRequestBody    string       `json:"loginRequestBody,omitempty"`
+	SessionCheckURL     string       `json:"sessionCheckUrl,omitempty"`
+	SessionCheckPattern string       `json:"sessionCheckPattern,omitempty"`
+	LoggedInRegex       string       `json:"loggedInRegex,omitempty"`
+	LoggedOutRegex      string       `json:"loggedOutRegex,omitempty"`
+}
+
 type DastTarget struct {
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	AuthType string `json:"authType,omitempty"`
+	Name        string       `json:"name"`
+	URL         string       `json:"url"`
+	AuthType    DastAuthType `json:"authType,omitempty"`
+	AuthProfile string       `json:"authProfile,omitempty"`
 }
 
 type ScanProfile struct {
-	Mode           ScanMode         `json:"mode"`
-	Isolation      IsolationMode    `json:"isolation,omitempty"`
-	Coverage       CoverageProfile  `json:"coverage,omitempty"`
-	PresetID       CompliancePreset `json:"presetId,omitempty"`
-	Modules        []string         `json:"modules"`
-	SeverityGate   Severity         `json:"severityGate"`
-	PolicyID       string           `json:"policyId,omitempty"`
-	AllowBuild     bool             `json:"allowBuild"`
-	AllowNetwork   bool             `json:"allowNetwork"`
-	DASTTargets    []DastTarget     `json:"dastTargets"`
-	CredentialsRef string           `json:"credentialsRef,omitempty"`
+	Mode             ScanMode          `json:"mode"`
+	Isolation        IsolationMode     `json:"isolation,omitempty"`
+	Coverage         CoverageProfile   `json:"coverage,omitempty"`
+	PresetID         CompliancePreset  `json:"presetId,omitempty"`
+	Modules          []string          `json:"modules"`
+	SeverityGate     Severity          `json:"severityGate"`
+	PolicyID         string            `json:"policyId,omitempty"`
+	AllowBuild       bool              `json:"allowBuild"`
+	AllowNetwork     bool              `json:"allowNetwork"`
+	DASTTargets      []DastTarget      `json:"dastTargets"`
+	DASTAuthProfiles []DastAuthProfile `json:"dastAuthProfiles,omitempty"`
+	CredentialsRef   string            `json:"credentialsRef,omitempty"`
 }
 
 type Project struct {
@@ -226,36 +344,39 @@ type ModuleResult struct {
 }
 
 type Finding struct {
-	ID           string          `json:"id"`
-	ScanID       string          `json:"scanId"`
-	ProjectID    string          `json:"projectId"`
-	Category     FindingCategory `json:"category"`
-	RuleID       string          `json:"ruleId"`
-	Title        string          `json:"title"`
-	Severity     Severity        `json:"severity"`
-	Confidence   float64         `json:"confidence"`
-	Reachability string          `json:"reachability"`
-	Fingerprint  string          `json:"fingerprint"`
-	EvidenceRef  string          `json:"evidenceRef,omitempty"`
-	Remediation  string          `json:"remediation"`
-	Location     string          `json:"location,omitempty"`
-	Module       string          `json:"module"`
-	CVSS31       float64         `json:"cvss31,omitempty"`
-	CVSS40       float64         `json:"cvss40,omitempty"`
-	EPSSScore    float64         `json:"epssScore,omitempty"`
-	EPSSPercent  float64         `json:"epssPercent,omitempty"`
-	KEV          bool            `json:"kev,omitempty"`
-	CWEs         []string        `json:"cwes,omitempty"`
-	Compliance   []string        `json:"compliance,omitempty"`
-	Priority     float64         `json:"priority,omitempty"`
-	AssetValue   float64         `json:"assetValue,omitempty"`
-	AttackChain  string          `json:"attackChain,omitempty"`
-	Related      []string        `json:"related,omitempty"`
-	Status       FindingStatus   `json:"status,omitempty"`
-	Tags         []string        `json:"tags,omitempty"`
-	Note         string          `json:"note,omitempty"`
-	Owner        string          `json:"owner,omitempty"`
-	UpdatedAt    *time.Time      `json:"updatedAt,omitempty"`
+	ID                 string          `json:"id"`
+	ScanID             string          `json:"scanId"`
+	ProjectID          string          `json:"projectId"`
+	Category           FindingCategory `json:"category"`
+	RuleID             string          `json:"ruleId"`
+	Title              string          `json:"title"`
+	Severity           Severity        `json:"severity"`
+	Confidence         float64         `json:"confidence"`
+	Reachability       Reachability    `json:"reachability"`
+	Fingerprint        string          `json:"fingerprint"`
+	EvidenceRef        string          `json:"evidenceRef,omitempty"`
+	Remediation        string          `json:"remediation"`
+	Location           string          `json:"location,omitempty"`
+	Module             string          `json:"module"`
+	CVSS31             float64         `json:"cvss31,omitempty"`
+	CVSS40             float64         `json:"cvss40,omitempty"`
+	EPSSScore          float64         `json:"epssScore,omitempty"`
+	EPSSPercent        float64         `json:"epssPercent,omitempty"`
+	KEV                bool            `json:"kev,omitempty"`
+	CWEs               []string        `json:"cwes,omitempty"`
+	Compliance         []string        `json:"compliance,omitempty"`
+	Priority           float64         `json:"priority,omitempty"`
+	AssetValue         float64         `json:"assetValue,omitempty"`
+	AttackChain        string          `json:"attackChain,omitempty"`
+	Related            []string        `json:"related,omitempty"`
+	Status             FindingStatus   `json:"status,omitempty"`
+	Tags               []string        `json:"tags,omitempty"`
+	Note               string          `json:"note,omitempty"`
+	Owner              string          `json:"owner,omitempty"`
+	VEXStatus          VEXStatus       `json:"vexStatus,omitempty"`
+	VEXJustification   string          `json:"vexJustification,omitempty"`
+	VEXStatementSource string          `json:"vexStatementSource,omitempty"`
+	UpdatedAt          *time.Time      `json:"updatedAt,omitempty"`
 }
 
 type RunTrendPoint struct {
@@ -611,22 +732,35 @@ const (
 	RuntimeCheckSkip RuntimeCheckStatus = "skip"
 )
 
+type RuntimeCheckClass string
+
+const (
+	RuntimeCheckClassAvailability RuntimeCheckClass = "availability"
+	RuntimeCheckClassIntegrity    RuntimeCheckClass = "integrity"
+	RuntimeCheckClassNetwork      RuntimeCheckClass = "network"
+	RuntimeCheckClassFilesystem   RuntimeCheckClass = "filesystem"
+	RuntimeCheckClassRelease      RuntimeCheckClass = "release"
+)
+
 type RuntimeDoctorCheck struct {
 	Name    string             `json:"name"`
+	Class   RuntimeCheckClass  `json:"class,omitempty"`
 	Status  RuntimeCheckStatus `json:"status"`
 	Summary string             `json:"summary,omitempty"`
 	Details []string           `json:"details,omitempty"`
 }
 
 type PolicyRule struct {
-	ID          string          `json:"id"`
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	Outcome     PolicyOutcome   `json:"outcome"`
-	Threshold   int             `json:"threshold"`
-	ChangeScope FindingChange   `json:"changeScope,omitempty"`
-	Severity    Severity        `json:"severity,omitempty"`
-	Category    FindingCategory `json:"category,omitempty"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description,omitempty"`
+	Outcome      PolicyOutcome   `json:"outcome"`
+	Threshold    int             `json:"threshold"`
+	ChangeScope  FindingChange   `json:"changeScope,omitempty"`
+	Severity     Severity        `json:"severity,omitempty"`
+	Category     FindingCategory `json:"category,omitempty"`
+	Reachability Reachability    `json:"reachability,omitempty"`
+	TagsAny      []string        `json:"tagsAny,omitempty"`
 }
 
 type PolicyPack struct {
@@ -648,6 +782,35 @@ type PolicyEvaluation struct {
 	BaselineRunID string             `json:"baselineRunId,omitempty"`
 	Passed        bool               `json:"passed"`
 	Results       []PolicyRuleResult `json:"results"`
+}
+
+type VEXStatus string
+
+const (
+	VEXStatusAffected           VEXStatus = "affected"
+	VEXStatusNotAffected        VEXStatus = "not_affected"
+	VEXStatusFixed              VEXStatus = "fixed"
+	VEXStatusUnderInvestigation VEXStatus = "under_investigation"
+)
+
+type VEXSummary struct {
+	Source       string            `json:"source,omitempty"`
+	AppliedCount int               `json:"appliedCount,omitempty"`
+	StatusCounts map[VEXStatus]int `json:"statusCounts,omitempty"`
+}
+
+type SBOMAttestationSubject struct {
+	Name   string `json:"name"`
+	URI    string `json:"uri"`
+	SHA256 string `json:"sha256"`
+}
+
+type SBOMAttestation struct {
+	Type      string                   `json:"type"`
+	RunID     string                   `json:"runId"`
+	ProjectID string                   `json:"projectId"`
+	Timestamp time.Time                `json:"timestamp"`
+	Subjects  []SBOMAttestationSubject `json:"subjects"`
 }
 
 type DashboardSnapshot struct {
@@ -672,6 +835,33 @@ type CreateScanRequest struct {
 type ExportReportRequest struct {
 	ScanID string `json:"scanId"`
 	Format string `json:"format"`
+}
+
+type RunReportFinding struct {
+	Finding Finding       `json:"finding"`
+	Change  FindingChange `json:"change"`
+}
+
+type RunReportModuleSummary struct {
+	Name         string            `json:"name"`
+	Status       ModuleStatus      `json:"status"`
+	FindingCount int               `json:"findingCount"`
+	Attempts     int               `json:"attempts"`
+	DurationMs   int64             `json:"durationMs"`
+	TimedOut     bool              `json:"timedOut,omitempty"`
+	FailureKind  ModuleFailureKind `json:"failureKind,omitempty"`
+	Summary      string            `json:"summary,omitempty"`
+}
+
+type RunReport struct {
+	Run             ScanRun                  `json:"run"`
+	Baseline        *ScanRun                 `json:"baseline,omitempty"`
+	Findings        []RunReportFinding       `json:"findings"`
+	Delta           RunDelta                 `json:"delta"`
+	Trends          []RunTrendPoint          `json:"trends,omitempty"`
+	ModuleStats     map[string]int           `json:"moduleStats,omitempty"`
+	ModuleSummaries []RunReportModuleSummary `json:"moduleSummaries,omitempty"`
+	VEX             VEXSummary               `json:"vex,omitempty"`
 }
 
 type DastPlanRequest struct {

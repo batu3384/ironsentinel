@@ -470,55 +470,33 @@ func (a *App) scanPhaseLines(modules []string) []string {
 }
 
 type scanLaneDescriptor struct {
-	Key   string
-	Title string
-	Kind  string
-	ETA   string
+	Key     string
+	Title   string
+	Kind    string
+	ETA     string
+	Modules []string
 }
 
 func (a *App) scanLaneDescriptors(modules []string) []scanLaneDescriptor {
-	orderedModules := orderResolvedModules(modules)
-	seen := map[string]struct{}{}
-	lanes := make([]scanLaneDescriptor, 0, len(orderedModules))
-	for _, module := range orderedModules {
-		key := a.moduleLaneKey(module)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		lanes = append(lanes, a.scanLaneDescriptor(key))
-	}
-	if len(lanes) == 0 {
-		lanes = append(lanes, a.scanLaneDescriptor("general"))
+	plans := domain.LanePlans(modules)
+	lanes := make([]scanLaneDescriptor, 0, len(plans))
+	for _, plan := range plans {
+		lanes = append(lanes, a.scanLaneDescriptorFromPlan(plan))
 	}
 	return lanes
 }
 
 func (a *App) scanLaneDescriptorsForProject(project domain.Project, modules []string, runs []domain.ScanRun) []scanLaneDescriptor {
-	lanes := a.scanLaneDescriptors(modules)
-	for index := range lanes {
-		lanes[index].ETA = a.projectLaneETALabel(project, modules, runs, lanes[index])
+	plans := domain.ProjectLanePlans(project, modules, runs)
+	lanes := make([]scanLaneDescriptor, 0, len(plans))
+	for _, plan := range plans {
+		lanes = append(lanes, a.scanLaneDescriptorFromPlan(plan))
 	}
 	return lanes
 }
 
 func (a *App) moduleLaneKey(module string) string {
-	switch strings.TrimSpace(module) {
-	case "stack-detector", "surface-inventory", "script-audit", "runtime-config-audit":
-		return "surface"
-	case "secret-heuristics", "gitleaks", "semgrep", "codeql", "govulncheck", "staticcheck":
-		return "code"
-	case "trivy", "syft", "grype", "osv-scanner", "dependency-confusion", "licensee", "scancode", "knip", "vulture":
-		return "supply"
-	case "checkov", "tfsec", "kics", "trivy-image":
-		return "infra"
-	case "malware-signature", "clamscan", "yara-x", "binary-entropy":
-		return "malware"
-	case "nuclei", "zaproxy":
-		return "active"
-	default:
-		return "general"
-	}
+	return domain.ModulePlanSpecFor(strings.TrimSpace(module), "").Lane
 }
 
 func (a *App) scanLaneDescriptor(key string) scanLaneDescriptor {
@@ -575,112 +553,6 @@ func (a *App) scanLaneDescriptor(key string) scanLaneDescriptor {
 	}
 }
 
-func (a *App) projectLaneETALabel(project domain.Project, modules []string, runs []domain.ScanRun, descriptor scanLaneDescriptor) string {
-	base := descriptor.ETA
-	targetModules := 0
-	for _, module := range orderResolvedModules(modules) {
-		if a.moduleLaneKey(module) == descriptor.Key {
-			targetModules++
-		}
-	}
-	if targetModules == 0 {
-		return base
-	}
-	var (
-		sampleRuns    int
-		totalDuration int64
-		totalModCount int
-	)
-	for index := len(runs) - 1; index >= 0; index-- {
-		run := runs[index]
-		if strings.TrimSpace(project.ID) == "" || run.ProjectID != project.ID {
-			continue
-		}
-		laneDuration := int64(0)
-		laneModules := 0
-		for _, module := range run.ModuleResults {
-			if a.moduleLaneKey(module.Name) != descriptor.Key || module.DurationMs <= 0 {
-				continue
-			}
-			laneDuration += module.DurationMs
-			laneModules++
-		}
-		if laneModules == 0 || laneDuration <= 0 {
-			continue
-		}
-		totalDuration += laneDuration
-		totalModCount += laneModules
-		sampleRuns++
-		if sampleRuns >= 6 {
-			break
-		}
-	}
-	historicalMs := int64(0)
-	if sampleRuns > 0 && totalModCount > 0 {
-		historicalMs = int64(float64(totalDuration) / float64(totalModCount) * float64(targetModules))
-	}
-	heuristicMs := a.heuristicLaneETAMs(project, modules, descriptor)
-
-	var estimatedMs int64
-	switch {
-	case historicalMs > 0 && heuristicMs > 0:
-		historicalWeight := 0.65
-		if sampleRuns <= 1 {
-			historicalWeight = 0.55
-		} else if sampleRuns >= 4 {
-			historicalWeight = 0.75
-		}
-		estimatedMs = int64(float64(historicalMs)*historicalWeight + float64(heuristicMs)*(1-historicalWeight))
-	case historicalMs > 0:
-		estimatedMs = historicalMs
-	case heuristicMs > 0:
-		estimatedMs = heuristicMs
-	}
-	if estimatedMs <= 0 {
-		return base
-	}
-	return a.formatLaneETA(estimatedMs)
-}
-
-func (a *App) heuristicLaneETAMs(project domain.Project, modules []string, descriptor scanLaneDescriptor) int64 {
-	if descriptor.Key == "active" {
-		return 0
-	}
-	targetModules := 0
-	for _, module := range orderResolvedModules(modules) {
-		if a.moduleLaneKey(module) == descriptor.Key {
-			targetModules++
-		}
-	}
-	if targetModules == 0 {
-		return 0
-	}
-	var basePerModule int64
-	switch descriptor.Key {
-	case "surface":
-		basePerModule = 2500
-	case "code":
-		basePerModule = 7000
-	case "supply":
-		basePerModule = 60000
-	case "infra":
-		basePerModule = 45000
-	case "malware":
-		basePerModule = 35000
-	default:
-		basePerModule = 30000
-	}
-	stackFactor := 1.0
-	if count := len(project.DetectedStacks); count > 1 {
-		stackFactor += minFloat(0.8, float64(count-1)*0.18)
-	}
-	breadthFactor := 1.0
-	if moduleCount := len(orderResolvedModules(modules)); moduleCount > 6 {
-		breadthFactor += minFloat(0.45, float64(moduleCount-6)*0.04)
-	}
-	return int64(float64(basePerModule*int64(targetModules)) * stackFactor * breadthFactor)
-}
-
 func (a *App) formatLaneETA(ms int64) string {
 	if ms <= 0 {
 		return "-"
@@ -694,11 +566,28 @@ func (a *App) formatLaneETA(ms int64) string {
 	return "~" + duration.String()
 }
 
-func minFloat(left, right float64) float64 {
-	if left < right {
-		return left
+func (a *App) scanLaneDescriptorFromPlan(plan domain.ScanLanePlan) scanLaneDescriptor {
+	descriptor := a.scanLaneDescriptor(plan.Key)
+	descriptor.Kind = a.scanLaneKindLabel(plan.Kind)
+	descriptor.Modules = make([]string, 0, len(plan.Modules))
+	for _, module := range plan.Modules {
+		descriptor.Modules = append(descriptor.Modules, module.Name)
 	}
-	return right
+	if plan.EstimatedMs > 0 {
+		descriptor.ETA = a.formatLaneETA(plan.EstimatedMs)
+	}
+	return descriptor
+}
+
+func (a *App) scanLaneKindLabel(kind domain.ScanLaneKind) string {
+	switch kind {
+	case domain.ScanLaneKindFast:
+		return a.catalog.T("app_lane_kind_fast")
+	case domain.ScanLaneKindActive:
+		return a.catalog.T("app_lane_kind_active")
+	default:
+		return a.catalog.T("app_lane_kind_heavy")
+	}
 }
 
 func (a *App) formatLaneDescriptor(descriptor scanLaneDescriptor, width int) string {

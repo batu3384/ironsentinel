@@ -43,6 +43,7 @@ func (s *Service) sqliteDoctorCheck() domain.RuntimeDoctorCheck {
 	if err != nil {
 		return domain.RuntimeDoctorCheck{
 			Name:    "sqlite_integrity",
+			Class:   domain.RuntimeCheckClassIntegrity,
 			Status:  domain.RuntimeCheckFail,
 			Summary: "SQLite integrity check failed.",
 			Details: []string{err.Error()},
@@ -58,6 +59,7 @@ func (s *Service) sqliteDoctorCheck() domain.RuntimeDoctorCheck {
 	if len(issues) > 0 {
 		return domain.RuntimeDoctorCheck{
 			Name:    "sqlite_integrity",
+			Class:   domain.RuntimeCheckClassIntegrity,
 			Status:  domain.RuntimeCheckFail,
 			Summary: "SQLite integrity issues detected.",
 			Details: issues,
@@ -65,6 +67,7 @@ func (s *Service) sqliteDoctorCheck() domain.RuntimeDoctorCheck {
 	}
 	return domain.RuntimeDoctorCheck{
 		Name:    "sqlite_integrity",
+		Class:   domain.RuntimeCheckClassIntegrity,
 		Status:  domain.RuntimeCheckPass,
 		Summary: "SQLite integrity check returned ok.",
 		Details: []string{s.store.Path()},
@@ -75,6 +78,7 @@ func (s *Service) directoryPermissionCheck(name, path string) domain.RuntimeDoct
 	if strings.TrimSpace(path) == "" {
 		return domain.RuntimeDoctorCheck{
 			Name:    "permissions_" + name,
+			Class:   domain.RuntimeCheckClassFilesystem,
 			Status:  domain.RuntimeCheckSkip,
 			Summary: "No path configured.",
 		}
@@ -82,6 +86,7 @@ func (s *Service) directoryPermissionCheck(name, path string) domain.RuntimeDoct
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return domain.RuntimeDoctorCheck{
 			Name:    "permissions_" + name,
+			Class:   domain.RuntimeCheckClassFilesystem,
 			Status:  domain.RuntimeCheckFail,
 			Summary: "Directory creation failed.",
 			Details: []string{path, err.Error()},
@@ -91,6 +96,7 @@ func (s *Service) directoryPermissionCheck(name, path string) domain.RuntimeDoct
 	if err := os.WriteFile(probe, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0o644); err != nil {
 		return domain.RuntimeDoctorCheck{
 			Name:    "permissions_" + name,
+			Class:   domain.RuntimeCheckClassFilesystem,
 			Status:  domain.RuntimeCheckFail,
 			Summary: "Directory is not writable.",
 			Details: []string{path, err.Error()},
@@ -99,6 +105,7 @@ func (s *Service) directoryPermissionCheck(name, path string) domain.RuntimeDoct
 	_ = os.Remove(probe)
 	return domain.RuntimeDoctorCheck{
 		Name:    "permissions_" + name,
+		Class:   domain.RuntimeCheckClassFilesystem,
 		Status:  domain.RuntimeCheckPass,
 		Summary: "Directory write probe succeeded.",
 		Details: []string{path},
@@ -110,6 +117,7 @@ func (s *Service) diskDoctorCheck() domain.RuntimeDoctorCheck {
 	if err != nil {
 		return domain.RuntimeDoctorCheck{
 			Name:    "disk_space",
+			Class:   domain.RuntimeCheckClassFilesystem,
 			Status:  domain.RuntimeCheckSkip,
 			Summary: "Disk space probe unavailable.",
 			Details: []string{err.Error()},
@@ -131,6 +139,7 @@ func (s *Service) diskDoctorCheck() domain.RuntimeDoctorCheck {
 	}
 	return domain.RuntimeDoctorCheck{
 		Name:    "disk_space",
+		Class:   domain.RuntimeCheckClassFilesystem,
 		Status:  status,
 		Summary: summary,
 		Details: []string{s.config.OutputDir},
@@ -141,6 +150,7 @@ func (s *Service) networkDoctorCheck() domain.RuntimeDoctorCheck {
 	if s.config.OfflineMode {
 		return domain.RuntimeDoctorCheck{
 			Name:    "network_probe",
+			Class:   domain.RuntimeCheckClassNetwork,
 			Status:  domain.RuntimeCheckSkip,
 			Summary: "Offline mode is forced by configuration.",
 		}
@@ -159,6 +169,7 @@ func (s *Service) networkDoctorCheck() domain.RuntimeDoctorCheck {
 			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 				return domain.RuntimeDoctorCheck{
 					Name:    "network_probe",
+					Class:   domain.RuntimeCheckClassNetwork,
 					Status:  domain.RuntimeCheckPass,
 					Summary: "Outbound connectivity looks healthy.",
 					Details: []string{probe, resp.Status},
@@ -171,6 +182,7 @@ func (s *Service) networkDoctorCheck() domain.RuntimeDoctorCheck {
 	}
 	return domain.RuntimeDoctorCheck{
 		Name:    "network_probe",
+		Class:   domain.RuntimeCheckClassNetwork,
 		Status:  domain.RuntimeCheckWarn,
 		Summary: "Outbound connectivity probe could not confirm online state.",
 		Details: failures,

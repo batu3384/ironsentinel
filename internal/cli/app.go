@@ -2,13 +2,14 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,9 +23,14 @@ import (
 	"github.com/batu3384/ironsentinel/internal/config"
 	"github.com/batu3384/ironsentinel/internal/core"
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/evidence"
 	"github.com/batu3384/ironsentinel/internal/i18n"
+	ghint "github.com/batu3384/ironsentinel/internal/integrations/github"
 	"github.com/batu3384/ironsentinel/internal/preferences"
 	scanprofile "github.com/batu3384/ironsentinel/internal/profile"
+	"github.com/batu3384/ironsentinel/internal/reports"
+	"github.com/batu3384/ironsentinel/internal/sbom"
+	"github.com/batu3384/ironsentinel/internal/store"
 )
 
 var selectableModules = []string{
@@ -68,18 +74,23 @@ var selectableFindingStatuses = []domain.FindingStatus{
 }
 
 type App struct {
-	cfg                  config.Config
-	service              *core.Service
-	lang                 i18n.Language
-	uiMode               uiMode
-	catalog              i18n.Catalog
-	preferences          preferences.Preferences
-	languageConfigured   bool
-	streamVerbose        bool
-	streamMissionControl bool
-	runtimeCacheMu       sync.Mutex
-	runtimeCache         domain.RuntimeStatus
-	runtimeCacheAt       time.Time
+	cfg                   config.Config
+	service               *core.Service
+	cwd                   string
+	lang                  i18n.Language
+	uiMode                uiMode
+	catalog               i18n.Catalog
+	preferences           preferences.Preferences
+	languageConfigured    bool
+	streamVerbose         bool
+	streamMissionControl  bool
+	runtimeCacheMu        sync.Mutex
+	runtimeCache          domain.RuntimeStatus
+	runtimeCacheAt        time.Time
+	runtimeDoctorFn       func(domain.ScanProfile, bool, bool) domain.RuntimeDoctor
+	runtimeDoctorCache    domain.RuntimeDoctor
+	runtimeDoctorCacheKey string
+	runtimeDoctorCacheAt  time.Time
 }
 
 type labeledValue struct {
@@ -111,6 +122,8 @@ type scanWizardDefaults struct {
 	AllowBuild     bool
 	AllowNetwork   bool
 	DASTTargets    []string
+	DASTTargetAuth []string
+	DASTAuthFile   string
 	Modules        []string
 }
 
@@ -118,6 +131,10 @@ func New(cfg config.Config) (*App, error) {
 	service, err := core.New(cfg)
 	if err != nil {
 		return nil, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
 	}
 
 	prefs, err := preferences.Load(cfg)
@@ -137,6 +154,7 @@ func New(cfg config.Config) (*App, error) {
 	app := &App{
 		cfg:                cfg,
 		service:            service,
+		cwd:                cwd,
 		lang:               lang,
 		uiMode:             mode,
 		catalog:            i18n.New(lang),
@@ -286,431 +304,6 @@ func (a *App) localizeHelpFlags(command *cobra.Command) {
 	}
 	for _, child := range command.Commands() {
 		a.localizeHelpFlags(child)
-	}
-}
-
-func (a *App) RootCommand() *cobra.Command {
-	var langFlag string
-	var uiModeFlag string
-	if previewLang, previewMode := previewPersistentFlagValues(os.Args[1:]); previewLang != "" || previewMode != "" {
-		if previewLang != "" {
-			_ = a.SetLanguage(previewLang)
-		}
-		if previewMode != "" {
-			_ = a.SetUIMode(previewMode)
-		}
-	}
-
-	root := &cobra.Command{
-		Use:           brandPrimaryBinary,
-		Short:         a.catalog.T("app_subtitle"),
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.runPrimarySurface(cmd.Context())
-		},
-	}
-	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		if langFlag != "" {
-			if err := a.SetLanguage(langFlag); err != nil {
-				return err
-			}
-		}
-		if uiModeFlag != "" {
-			if err := a.SetUIMode(uiModeFlag); err != nil {
-				return err
-			}
-		}
-		if err := a.ensureInitialLanguageSelection(root, langFlag); err != nil {
-			return err
-		}
-		return nil
-	}
-	root.CompletionOptions.DisableDefaultCmd = true
-	root.SetUsageTemplate(a.localizedUsageTemplate())
-	root.SetHelpCommand(a.newHelpCommand(root))
-
-	root.PersistentFlags().StringVar(&langFlag, "lang", "", a.catalog.T("lang_flag"))
-	root.PersistentFlags().StringVar(&uiModeFlag, "ui-mode", "", a.catalog.T("ui_mode_flag"))
-
-	root.AddCommand(a.overviewCommand())
-	root.AddCommand(a.tuiCommand())
-	root.AddCommand(a.consoleCommand())
-	root.AddCommand(a.setupCommand())
-	root.AddCommand(a.daemonCommand())
-	root.AddCommand(a.initCommand())
-	root.AddCommand(a.openCommand())
-	root.AddCommand(a.pickCommand())
-	root.AddCommand(a.scanCommand())
-	root.AddCommand(a.findingsCommand())
-	root.AddCommand(a.reviewCommand())
-	root.AddCommand(a.triageCommand())
-	root.AddCommand(a.runtimeCommand())
-	root.AddCommand(a.projectsCommand())
-	root.AddCommand(a.runsCommand())
-	root.AddCommand(a.exportCommand())
-	root.AddCommand(a.suppressCommand())
-	root.AddCommand(a.dastCommand())
-	root.AddCommand(a.configCommand())
-	a.localizeHelpFlags(root)
-
-	return root
-}
-
-func (a *App) ensureInitialLanguageSelection(root *cobra.Command, langFlag string) error {
-	if !a.shouldPromptForInitialLanguage(root, langFlag) {
-		return nil
-	}
-
-	a.renderInitialLanguageOnboarding()
-
-	selection, err := a.promptInitialLanguageSelection()
-	if err != nil {
-		return err
-	}
-	if err := a.SaveLanguage(selection); err != nil {
-		return err
-	}
-	pterm.Success.Printf("%s\n", a.catalog.T("language_saved", strings.ToUpper(string(a.lang))))
-	return nil
-}
-
-func (a *App) shouldPromptForInitialLanguage(root *cobra.Command, langFlag string) bool {
-	interactive := a.isInteractiveTerminal()
-	args := os.Args[1:]
-	if root == nil {
-		return a.shouldPromptForInitialLanguageForCommand("", langFlag, interactive, args)
-	}
-	command, _, err := root.Find(args)
-	if err != nil || command == nil {
-		return a.shouldPromptForInitialLanguageForCommand("", langFlag, interactive, args)
-	}
-	return a.shouldPromptForInitialLanguageForCommand(command.CommandPath(), langFlag, interactive, args)
-}
-
-func (a *App) shouldPromptForInitialLanguageForCommand(commandPath, langFlag string, interactive bool, args []string) bool {
-	if a.languageConfigured {
-		return false
-	}
-	if strings.TrimSpace(langFlag) != "" {
-		return false
-	}
-	if !interactive {
-		return false
-	}
-	if hasHelpIntent(args) {
-		return false
-	}
-	path := strings.TrimSpace(commandPath)
-	if path == "" {
-		return true
-	}
-	return !isConfigLanguageCommandPath(path)
-}
-
-func hasHelpIntent(args []string) bool {
-	for _, arg := range args {
-		switch strings.TrimSpace(arg) {
-		case "-h", "--help", "help":
-			return true
-		}
-	}
-	return false
-}
-
-func (a *App) consoleCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:     "console",
-		Aliases: []string{"menu"},
-		Short:   a.catalog.T("console_title"),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := a.requireInteractiveSurface(); err != nil {
-				return err
-			}
-			return a.runConsole(cmd.Context())
-		},
-	}
-}
-
-func (a *App) overviewCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "overview",
-		Short: a.catalog.T("overview_title"),
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.renderHome()
-		},
-	}
-}
-
-func (a *App) setupCommand() *cobra.Command {
-	var (
-		target     string
-		coverage   string
-		withMirror bool
-	)
-
-	command := &cobra.Command{
-		Use:   "setup",
-		Short: a.catalog.T("setup_title"),
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := a.runSetup(target, domain.CoverageProfile(coverage), withMirror); err != nil {
-				return fmt.Errorf("%s", a.catalog.T("setup_failed", err.Error()))
-			}
-			pterm.Success.Println(a.catalog.T("setup_completed"))
-			return a.renderRuntimeDetails()
-		},
-	}
-	command.Flags().StringVar(&target, "target", "auto", a.catalog.T("setup_target_flag"))
-	command.Flags().StringVar(&coverage, "coverage", string(domain.CoveragePremium), a.catalog.T("setup_coverage_flag"))
-	command.Flags().BoolVar(&withMirror, "mirror", true, a.catalog.T("setup_mirror_flag"))
-	return command
-}
-
-func (a *App) initCommand() *cobra.Command {
-	var (
-		displayName string
-		picker      bool
-	)
-
-	command := &cobra.Command{
-		Use:   "init [path]",
-		Short: a.catalog.T("init_title"),
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "."
-			if len(args) > 0 {
-				path = args[0]
-			}
-			if picker {
-				path = ""
-			}
-
-			project, _, err := a.ensureProject(cmd.Context(), path, displayName, picker)
-			if err != nil {
-				return err
-			}
-			return a.renderProjects([]domain.Project{project})
-		},
-	}
-
-	command.Flags().StringVar(&displayName, "name", "", a.catalog.T("display_name_flag"))
-	command.Flags().BoolVar(&picker, "picker", false, a.catalog.T("prompt_use_picker"))
-	return command
-}
-
-func (a *App) openCommand() *cobra.Command {
-	command := &cobra.Command{
-		Use:   "open [project-id]",
-		Short: a.catalog.T("open_title"),
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID := ""
-			if len(args) > 0 {
-				projectID = strings.TrimSpace(args[0])
-			}
-
-			project, err := a.resolveProjectReference(projectID)
-			if err != nil {
-				return err
-			}
-			return a.runQuickScan(cmd.Context(), project)
-		},
-	}
-
-	return command
-}
-
-func (a *App) pickCommand() *cobra.Command {
-	var displayName string
-
-	command := &cobra.Command{
-		Use:   "pick",
-		Short: a.catalog.T("pick_title"),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			project, _, err := a.ensureProject(cmd.Context(), "", displayName, true)
-			if err != nil {
-				return err
-			}
-			return a.runQuickScan(cmd.Context(), project)
-		},
-	}
-
-	command.Flags().StringVar(&displayName, "name", "", a.catalog.T("display_name_flag"))
-	return command
-}
-
-func (a *App) daemonCommand() *cobra.Command {
-	var (
-		once             bool
-		interval         string
-		projectIDs       []string
-		presetID         string
-		mode             string
-		coverage         string
-		driftDetect      bool
-		autoUpdateBundle bool
-		slackWebhook     string
-		webhookURL       string
-	)
-
-	command := &cobra.Command{
-		Use:   "daemon",
-		Short: a.catalog.T("daemon_title"),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			duration, err := time.ParseDuration(strings.TrimSpace(interval))
-			if err != nil && strings.TrimSpace(interval) != "" {
-				return fmt.Errorf("%s", a.catalog.T("daemon_schedule_interval_invalid", interval))
-			}
-			return a.runDaemon(cmd.Context(), once, daemonOptions{
-				Interval:         duration,
-				ProjectIDs:       projectIDs,
-				PresetID:         domain.CompliancePreset(presetID),
-				Mode:             domain.ScanMode(mode),
-				Coverage:         domain.CoverageProfile(coverage),
-				AutoUpdateBundle: autoUpdateBundle,
-				DriftDetection:   driftDetect,
-				SlackWebhook:     coalesceString(slackWebhook, os.Getenv("SLACK_WEBHOOK_URL")),
-				WebhookURL:       coalesceString(webhookURL, os.Getenv("APPSEC_WEBHOOK_URL")),
-			})
-		},
-	}
-	command.Flags().BoolVar(&once, "once", false, a.catalog.T("daemon_once_flag"))
-	command.Flags().StringVar(&interval, "interval", "", a.catalog.T("daemon_schedule_interval_flag"))
-	command.Flags().StringArrayVar(&projectIDs, "project", nil, a.catalog.T("daemon_schedule_project_flag"))
-	command.Flags().StringVar(&presetID, "preset", "", a.catalog.T("daemon_schedule_preset_flag"))
-	command.Flags().StringVar(&mode, "mode", "", a.catalog.T("daemon_schedule_mode_flag"))
-	command.Flags().StringVar(&coverage, "coverage", "", a.catalog.T("daemon_schedule_coverage_flag"))
-	command.Flags().BoolVar(&autoUpdateBundle, "auto-update-bundle", false, a.catalog.T("daemon_schedule_auto_update_flag"))
-	command.Flags().BoolVar(&driftDetect, "drift-detection", true, a.catalog.T("daemon_schedule_drift_flag"))
-	command.Flags().StringVar(&slackWebhook, "slack-webhook-url", "", a.catalog.T("daemon_schedule_slack_flag"))
-	command.Flags().StringVar(&webhookURL, "webhook-url", "", a.catalog.T("daemon_schedule_webhook_flag"))
-	return command
-}
-
-func (a *App) runConsole(ctx context.Context) error {
-	for {
-		if err := a.renderHome(); err != nil {
-			return err
-		}
-
-		action, err := a.promptSelect(
-			a.catalog.T("console_prompt"),
-			[]labeledValue{
-				{Label: a.catalog.T("action_setup"), Value: "setup"},
-				{Label: a.catalog.T("action_scan"), Value: "scan"},
-				{Label: a.catalog.T("action_tui"), Value: "tui"},
-				{Label: a.catalog.T("action_runs"), Value: "runs"},
-				{Label: a.catalog.T("action_diff"), Value: "diff"},
-				{Label: a.catalog.T("action_gate"), Value: "gate"},
-				{Label: a.catalog.T("action_findings"), Value: "findings"},
-				{Label: a.catalog.T("action_review"), Value: "review"},
-				{Label: a.catalog.T("action_triage"), Value: "triage"},
-				{Label: a.catalog.T("action_export"), Value: "export"},
-				{Label: a.catalog.T("action_suppress"), Value: "suppress"},
-				{Label: a.catalog.T("action_dast"), Value: "dast"},
-				{Label: a.catalog.T("action_language"), Value: "language"},
-				{Label: a.catalog.T("action_ui_mode"), Value: "ui-mode"},
-				{Label: a.catalog.T("action_runtime"), Value: "runtime"},
-				{Label: a.catalog.T("action_refresh"), Value: "refresh"},
-				{Label: a.catalog.T("action_exit"), Value: "exit"},
-			},
-			"scan",
-		)
-		if err != nil {
-			return err
-		}
-
-		pterm.Println()
-
-		switch action {
-		case "setup":
-			if err := a.runSetup("auto", domain.CoveragePremium, true); err != nil {
-				return err
-			}
-		case "scan":
-			if err := a.guidedScan(ctx, scanWizardDefaults{}); err != nil {
-				return err
-			}
-		case "tui":
-			return a.launchTUI(ctx)
-		case "runs":
-			runID, err := a.selectRun("")
-			if err != nil {
-				return err
-			}
-			if err := a.renderRunDetails(runID); err != nil {
-				return err
-			}
-		case "diff":
-			runID, err := a.selectRun("")
-			if err != nil {
-				return err
-			}
-			if err := a.renderRunDeltaView(runID, ""); err != nil {
-				return err
-			}
-		case "gate":
-			runID, err := a.selectRun("")
-			if err != nil {
-				return err
-			}
-			if err := a.runRegressionGate(runID, "", domain.SeverityHigh); err != nil {
-				return err
-			}
-		case "findings":
-			if err := a.renderFindingsView("", "", "", "", "", 25); err != nil {
-				return err
-			}
-		case "review":
-			if err := a.reviewFinding("", ""); err != nil {
-				return err
-			}
-		case "triage":
-			if err := a.guidedTriage("", "", "", nil, "", ""); err != nil {
-				return err
-			}
-		case "export":
-			if err := a.guidedExport(); err != nil {
-				return err
-			}
-		case "suppress":
-			if err := a.guidedSuppression("", "", "", 30, "", ""); err != nil {
-				return err
-			}
-		case "dast":
-			if err := a.guidedDASTPlan("", nil, false); err != nil {
-				return err
-			}
-		case "language":
-			selection, err := a.promptLanguageSelection()
-			if err != nil {
-				return err
-			}
-			if err := a.SaveLanguage(selection); err != nil {
-				return err
-			}
-			pterm.Success.Printf("%s\n", a.catalog.T("language_saved", strings.ToUpper(string(a.lang))))
-		case "ui-mode":
-			selection, err := a.promptUIModeSelection()
-			if err != nil {
-				return err
-			}
-			if err := a.SaveUIMode(selection); err != nil {
-				return err
-			}
-			pterm.Success.Printf("%s\n", a.catalog.T("ui_mode_saved", a.uiModeLabel(a.currentUIMode())))
-		case "runtime":
-			if err := a.renderRuntimeDetails(); err != nil {
-				return err
-			}
-		case "refresh":
-			continue
-		case "exit":
-			pterm.Success.Println(a.catalog.T("console_closed"))
-			return nil
-		}
-
-		pterm.Println()
 	}
 }
 
@@ -892,7 +485,7 @@ func (a *App) renderRuntimeDetails() error {
 }
 
 func (a *App) enforceRuntimeDoctor(profile domain.ScanProfile, strictVersions, requireIntegrity, render bool) error {
-	doctor := a.service.RuntimeDoctor(profile, strictVersions, requireIntegrity)
+	doctor := a.runtimeDoctor(profile, strictVersions, requireIntegrity)
 	if render {
 		a.renderRuntimeDoctor(doctor)
 	}
@@ -1301,6 +894,7 @@ func (a *App) runsCommand() *cobra.Command {
 
 	var gateBaselineRunID string
 	var gateSeverity string
+	var gateVEXFile string
 	gate := &cobra.Command{
 		Use:   "gate [run-id]",
 		Short: a.catalog.T("gate_title"),
@@ -1320,14 +914,16 @@ func (a *App) runsCommand() *cobra.Command {
 				}
 				runID = selected
 			}
-			return a.runRegressionGate(runID, gateBaselineRunID, domain.Severity(gateSeverity))
+			return a.runRegressionGateWithVEX(runID, gateBaselineRunID, domain.Severity(gateSeverity), gateVEXFile)
 		},
 	}
 	gate.Flags().StringVar(&gateBaselineRunID, "baseline", "", a.catalog.T("baseline_run_flag"))
 	gate.Flags().StringVar(&gateSeverity, "severity", string(domain.SeverityHigh), "critical|high|medium|low|info")
+	gate.Flags().StringVar(&gateVEXFile, "vex-file", "", a.catalog.T("vex_file_flag"))
 
 	var policyBaselineRunID string
 	var policyID string
+	var policyVEXFile string
 	policyCommand := &cobra.Command{
 		Use:   "policy [run-id]",
 		Short: a.catalog.T("policy_title"),
@@ -1347,11 +943,38 @@ func (a *App) runsCommand() *cobra.Command {
 				}
 				runID = selected
 			}
-			return a.runPolicyEvaluation(runID, policyBaselineRunID, policyID)
+			return a.runPolicyEvaluationWithVEX(runID, policyBaselineRunID, policyID, policyVEXFile)
 		},
 	}
 	policyCommand.Flags().StringVar(&policyBaselineRunID, "baseline", "", a.catalog.T("baseline_run_flag"))
 	policyCommand.Flags().StringVar(&policyID, "policy", "premium-default", a.catalog.T("policy_pack_flag"))
+	policyCommand.Flags().StringVar(&policyVEXFile, "vex-file", "", a.catalog.T("vex_file_flag"))
+
+	var attestationFile string
+	verifySBOMAttestation := &cobra.Command{
+		Use:   "verify-sbom-attestation [run-id]",
+		Short: a.catalog.T("run_verify_sbom_attestation_title"),
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			runID := ""
+			if len(args) > 0 {
+				runID = args[0]
+			}
+			if runID == "" {
+				if !a.isInteractiveTerminal() {
+					return fmt.Errorf("%s", a.catalog.T("run_not_found", ""))
+				}
+				selected, err := a.selectRun("")
+				if err != nil {
+					return err
+				}
+				runID = selected
+			}
+			return a.verifySBOMAttestation(runID, attestationFile)
+		},
+	}
+	verifySBOMAttestation.Flags().StringVar(&attestationFile, "file", "", a.catalog.T("run_verify_sbom_attestation_file_flag"))
+	_ = verifySBOMAttestation.MarkFlagRequired("file")
 
 	cancel := &cobra.Command{
 		Use:   "cancel [run-id]",
@@ -1416,7 +1039,7 @@ func (a *App) runsCommand() *cobra.Command {
 		},
 	}
 
-	runs.AddCommand(list, show, watch, artifacts, diff, gate, policyCommand, cancel, retryFailed)
+	runs.AddCommand(list, show, watch, artifacts, diff, gate, policyCommand, verifySBOMAttestation, cancel, retryFailed)
 	return runs
 }
 
@@ -1439,6 +1062,8 @@ func (a *App) scanCommand() *cobra.Command {
 		wizard         bool
 		enqueue        bool
 		dastTargets    []string
+		dastTargetAuth []string
+		dastAuthFile   string
 		modules        []string
 	)
 
@@ -1475,6 +1100,8 @@ func (a *App) scanCommand() *cobra.Command {
 					AllowBuild:     allowBuild,
 					AllowNetwork:   allowNetwork,
 					DASTTargets:    dastTargets,
+					DASTTargetAuth: dastTargetAuth,
+					DASTAuthFile:   dastAuthFile,
 					Modules:        modules,
 				})
 			}
@@ -1490,7 +1117,10 @@ func (a *App) scanCommand() *cobra.Command {
 				} else if domain.ScanMode(mode) == domain.ModeSafe || domain.CoverageProfile(coverage) == domain.CoverageCore || domain.CoverageProfile(coverage) == domain.CoveragePremium {
 					review.Preset = reviewPresetQuickSafe
 				}
-				targets := parseTargets(dastTargets)
+				targets, authProfiles, err := prepareDASTConfiguration(dastTargets, dastTargetAuth, dastAuthFile)
+				if err != nil {
+					return err
+				}
 				if domain.ScanMode(mode) == domain.ModeActive || len(targets) > 0 {
 					review.ActiveValidation = true
 					if len(targets) > 0 {
@@ -1499,8 +1129,10 @@ func (a *App) scanCommand() *cobra.Command {
 				}
 
 				state := appShellLaunchState{
-					Route:  appRouteScanReview,
-					Review: review,
+					Route:              appRouteScanReview,
+					Review:             review,
+					ReviewDASTTargets:  append([]domain.DastTarget(nil), targets...),
+					ReviewAuthProfiles: append([]domain.DastAuthProfile(nil), authProfiles...),
 				}
 				if picker {
 					state.Route = appRouteProjects
@@ -1521,17 +1153,23 @@ func (a *App) scanCommand() *cobra.Command {
 				return err
 			}
 
+			targets, authProfiles, err := prepareDASTConfiguration(dastTargets, dastTargetAuth, dastAuthFile)
+			if err != nil {
+				return err
+			}
+
 			profile := domain.ScanProfile{
-				Mode:         domain.ScanMode(mode),
-				Isolation:    domain.IsolationMode(isolation),
-				Coverage:     domain.CoverageProfile(coverage),
-				PresetID:     domain.CompliancePreset(presetID),
-				Modules:      modules,
-				SeverityGate: domain.Severity(gate),
-				PolicyID:     policyID,
-				AllowBuild:   allowBuild,
-				AllowNetwork: allowNetwork,
-				DASTTargets:  parseTargets(dastTargets),
+				Mode:             domain.ScanMode(mode),
+				Isolation:        domain.IsolationMode(isolation),
+				Coverage:         domain.CoverageProfile(coverage),
+				PresetID:         domain.CompliancePreset(presetID),
+				Modules:          modules,
+				SeverityGate:     domain.Severity(gate),
+				PolicyID:         policyID,
+				AllowBuild:       allowBuild,
+				AllowNetwork:     allowNetwork,
+				DASTTargets:      targets,
+				DASTAuthProfiles: authProfiles,
 			}
 
 			profile = a.applyCompliancePreset(project, profile,
@@ -1573,6 +1211,8 @@ func (a *App) scanCommand() *cobra.Command {
 	command.Flags().BoolVar(&wizard, "wizard", false, a.catalog.T("scan_wizard_flag"))
 	command.Flags().BoolVar(&enqueue, "enqueue", false, a.catalog.T("scan_enqueue_flag"))
 	command.Flags().StringArrayVar(&dastTargets, "dast-target", nil, a.catalog.T("scan_dast_target_flag"))
+	command.Flags().StringArrayVar(&dastTargetAuth, "dast-target-auth", nil, a.catalog.T("scan_dast_target_auth_flag"))
+	command.Flags().StringVar(&dastAuthFile, "dast-auth-file", "", a.catalog.T("scan_dast_auth_file_flag"))
 	command.Flags().StringArrayVar(&modules, "module", nil, a.catalog.T("scan_module_flag"))
 
 	return command
@@ -1703,6 +1343,7 @@ func (a *App) exportCommand() *cobra.Command {
 	var format string
 	var output string
 	var baselineRunID string
+	var vexFile string
 
 	command := &cobra.Command{
 		Use:   "export [run-id]",
@@ -1724,13 +1365,14 @@ func (a *App) exportCommand() *cobra.Command {
 				runID = selected
 			}
 
-			return a.exportRun(runID, format, output, baselineRunID)
+			return a.exportRunWithVEX(runID, format, output, baselineRunID, vexFile)
 		},
 	}
 
 	command.Flags().StringVar(&format, "format", a.catalog.T("export_default_format"), a.catalog.T("export_format_flag"))
 	command.Flags().StringVar(&output, "output", "", a.catalog.T("export_output_flag"))
 	command.Flags().StringVar(&baselineRunID, "baseline", "", a.catalog.T("baseline_run_flag"))
+	command.Flags().StringVar(&vexFile, "vex-file", "", a.catalog.T("vex_file_flag"))
 	return command
 }
 
@@ -1807,8 +1449,10 @@ func (a *App) dastCommand() *cobra.Command {
 	}
 
 	var (
-		active  bool
-		targets []string
+		active       bool
+		targets      []string
+		targetAuth   []string
+		dastAuthFile string
 	)
 	plan := &cobra.Command{
 		Use:   "plan [project-id]",
@@ -1819,13 +1463,19 @@ func (a *App) dastCommand() *cobra.Command {
 			if len(args) > 0 {
 				projectID = args[0]
 			}
-			return a.guidedDASTPlan(projectID, parseTargets(targets), active)
+			resolvedTargets, authProfiles, err := prepareDASTConfiguration(targets, targetAuth, dastAuthFile)
+			if err != nil {
+				return err
+			}
+			return a.guidedDASTPlan(projectID, resolvedTargets, authProfiles, active)
 		},
 	}
 	plan.Flags().BoolVar(&active, "active", false, a.catalog.T("dast_active_flag"))
 	plan.Flags().StringArrayVar(&targets, "target", nil, a.catalog.T("dast_target_flag"))
+	plan.Flags().StringArrayVar(&targetAuth, "target-auth", nil, a.catalog.T("dast_target_auth_flag"))
+	plan.Flags().StringVar(&dastAuthFile, "dast-auth-file", "", a.catalog.T("dast_auth_file_flag"))
 
-	dast.AddCommand(plan)
+	dast.AddCommand(plan, a.dastAuthTemplateCommand())
 	return dast
 }
 
@@ -1905,36 +1555,13 @@ func (a *App) configCommand() *cobra.Command {
 	return configCommand
 }
 
-func (a *App) guidedExport() error {
-	runID, err := a.selectRun("")
-	if err != nil {
-		return err
-	}
-
-	format, err := a.promptSelect(
-		a.catalog.T("export_format_prompt"),
-		[]labeledValue{
-			{Label: "HTML", Value: "html"},
-			{Label: "CSV", Value: "csv"},
-			{Label: "SARIF", Value: "sarif"},
-		},
-		a.catalog.T("export_default_format"),
-	)
-	if err != nil {
-		return err
-	}
-
-	defaultOutput := filepath.Join(a.cfg.OutputDir, fmt.Sprintf("%s.%s", runID, format))
-	output, err := a.promptText(a.catalog.T("export_path_prompt"), defaultOutput)
-	if err != nil {
-		return err
-	}
-	return a.exportRun(runID, format, strings.TrimSpace(output), "")
+func (a *App) exportRun(runID, format, output, baselineRunID string) error {
+	return a.exportRunWithVEX(runID, format, output, baselineRunID, "")
 }
 
-func (a *App) exportRun(runID, format, output, baselineRunID string) error {
+func (a *App) exportRunWithVEX(runID, format, output, baselineRunID, vexPath string) error {
 	if output == "" {
-		content, err := a.service.Export(runID, format, baselineRunID)
+		content, err := a.service.ExportWithVEX(runID, format, baselineRunID, vexPath)
 		if err != nil {
 			return err
 		}
@@ -1942,7 +1569,7 @@ func (a *App) exportRun(runID, format, output, baselineRunID string) error {
 		return nil
 	}
 
-	output, err := a.writeRunExport(runID, format, output, baselineRunID)
+	output, err := a.writeRunExportWithVEX(runID, format, output, baselineRunID, vexPath)
 	if err != nil {
 		return err
 	}
@@ -1969,6 +1596,741 @@ func (a *App) exportRun(runID, format, output, baselineRunID string) error {
 	return nil
 }
 
+func (a *App) campaignsCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "campaigns",
+		Short: a.catalog.T("campaigns_title"),
+	}
+	command.AddCommand(a.campaignsListCommand())
+	command.AddCommand(a.campaignsShowCommand())
+	command.AddCommand(a.campaignsCreateCommand())
+	command.AddCommand(a.campaignsAddFindingsCommand())
+	command.AddCommand(a.campaignsPublishGitHubCommand())
+	return command
+}
+
+func (a *App) campaignsListCommand() *cobra.Command {
+	var projectID string
+
+	command := &cobra.Command{
+		Use:   "list",
+		Short: a.catalog.T("campaigns_list_title"),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			items, err := a.loadCampaigns(projectID)
+			if err != nil {
+				return err
+			}
+			if len(items) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), a.catalog.T("campaigns_empty"))
+				return err
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n", a.catalog.T("campaigns_list_heading")); err != nil {
+				return err
+			}
+			for _, campaign := range items {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- %s | %s | %s | %d %s\n",
+					campaign.ID,
+					campaign.Title,
+					a.campaignProjectLabel(campaign.ProjectID),
+					len(campaign.FindingFingerprints),
+					a.catalog.T("campaigns_list_findings_suffix"),
+				); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&projectID, "project", "", a.catalog.T("campaigns_project_flag"))
+	return command
+}
+
+func (a *App) campaignsShowCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "show [campaign-id]",
+		Short: a.catalog.T("campaigns_show_title"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			campaign, err := a.loadCampaign(strings.TrimSpace(args[0]))
+			if err != nil {
+				return err
+			}
+			return a.renderCampaign(cmd.OutOrStdout(), campaign)
+		},
+	}
+	return command
+}
+
+func (a *App) campaignsCreateCommand() *cobra.Command {
+	var (
+		projectID     string
+		runID         string
+		campaignID    string
+		title         string
+		summary       string
+		baselineRunID string
+		findings      []string
+	)
+
+	command := &cobra.Command{
+		Use:   "create",
+		Short: a.catalog.T("campaigns_create_title"),
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID := strings.TrimSpace(projectID)
+			runID := strings.TrimSpace(runID)
+
+			project, ok := a.service.GetProject(projectID)
+			if !ok {
+				return fmt.Errorf("%s", a.catalog.T("project_not_found", projectID))
+			}
+			run, ok := a.service.GetRun(runID)
+			if !ok {
+				return fmt.Errorf("%s", a.catalog.T("run_not_found", runID))
+			}
+			if run.ProjectID != project.ID {
+				return fmt.Errorf("campaign source run %s does not belong to project %s", runID, projectID)
+			}
+
+			resolvedFindings := append([]string(nil), findings...)
+			if len(resolvedFindings) == 0 {
+				return fmt.Errorf("campaign requires at least one valid finding fingerprint")
+			}
+
+			resolvedID := strings.TrimSpace(campaignID)
+			if resolvedID == "" {
+				resolvedID = a.generateCampaignID(project.ID, run.ID)
+			}
+			created, err := a.service.CreateCampaign(domain.Campaign{
+				ID:                  resolvedID,
+				ProjectID:           project.ID,
+				Title:               strings.TrimSpace(title),
+				Summary:             strings.TrimSpace(summary),
+				SourceRunID:         run.ID,
+				BaselineRunID:       strings.TrimSpace(baselineRunID),
+				FindingFingerprints: resolvedFindings,
+			})
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n", a.catalog.T("campaigns_created", created.ID, created.Title))
+			return err
+		},
+	}
+
+	command.Flags().StringVar(&projectID, "project", "", a.catalog.T("campaign_create_project_flag"))
+	command.Flags().StringVar(&runID, "run", "", a.catalog.T("campaign_create_run_flag"))
+	command.Flags().StringVar(&campaignID, "id", "", a.catalog.T("campaign_id_flag"))
+	command.Flags().StringVar(&title, "title", "", a.catalog.T("campaign_title_flag"))
+	command.Flags().StringVar(&summary, "summary", "", a.catalog.T("campaign_summary_flag"))
+	command.Flags().StringVar(&baselineRunID, "baseline", "", a.catalog.T("campaign_baseline_flag"))
+	command.Flags().StringSliceVar(&findings, "finding", nil, a.catalog.T("campaign_findings_flag"))
+	_ = command.MarkFlagRequired("project")
+	_ = command.MarkFlagRequired("run")
+	_ = command.MarkFlagRequired("title")
+	_ = command.MarkFlagRequired("finding")
+	return command
+}
+
+func (a *App) campaignsAddFindingsCommand() *cobra.Command {
+	var (
+		runID    string
+		findings []string
+	)
+
+	command := &cobra.Command{
+		Use:   "add-findings [campaign-id]",
+		Short: a.catalog.T("campaigns_add_findings_title"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			campaignID := strings.TrimSpace(args[0])
+			campaign, err := a.loadCampaign(campaignID)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(runID) != campaign.SourceRunID {
+				return fmt.Errorf("campaign source run %s does not match %s", campaign.SourceRunID, strings.TrimSpace(runID))
+			}
+			updated, err := a.service.AddFindingsToCampaign(campaignID, findings)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n", a.catalog.T("campaigns_added_findings", updated.ID, len(updated.FindingFingerprints)))
+			return err
+		},
+	}
+	command.Flags().StringVar(&runID, "run", "", a.catalog.T("campaign_create_run_flag"))
+	command.Flags().StringSliceVar(&findings, "finding", nil, a.catalog.T("campaign_findings_flag"))
+	_ = command.MarkFlagRequired("run")
+	_ = command.MarkFlagRequired("finding")
+	return command
+}
+
+func (a *App) campaignsPublishGitHubCommand() *cobra.Command {
+	var repoFlag string
+
+	command := &cobra.Command{
+		Use:   "publish-github [campaign-id]",
+		Short: a.catalog.T("campaigns_publish_github_title"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.publishCampaignToGitHub(cmd.Context(), strings.TrimSpace(args[0]), repoFlag)
+		},
+	}
+	command.Flags().StringVar(&repoFlag, "repo", "", a.catalog.T("campaign_repo_flag"))
+	_ = command.MarkFlagRequired("repo")
+	return command
+}
+
+func (a *App) loadCampaigns(projectID string) ([]domain.Campaign, error) {
+	st, err := a.campaignStore()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = st.Close() }()
+	return st.ListCampaigns(strings.TrimSpace(projectID)), nil
+}
+
+func (a *App) loadCampaign(campaignID string) (domain.Campaign, error) {
+	st, err := a.campaignStore()
+	if err != nil {
+		return domain.Campaign{}, err
+	}
+	defer func() { _ = st.Close() }()
+	campaign, ok := st.GetCampaign(strings.TrimSpace(campaignID))
+	if !ok {
+		return domain.Campaign{}, fmt.Errorf("%s", a.catalog.T("campaign_not_found", campaignID))
+	}
+	return campaign, nil
+}
+
+func (a *App) campaignStore() (*store.StateStore, error) {
+	return store.NewStateStore(filepath.Join(a.cfg.DataDir, "state.db"))
+}
+
+func (a *App) renderCampaign(out io.Writer, campaign domain.Campaign) error {
+	projectLabel := a.campaignProjectLabel(campaign.ProjectID)
+	if _, err := fmt.Fprintf(out, "%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %d\n%s: %d\n",
+		a.catalog.T("campaign_id_label"), campaign.ID,
+		a.catalog.T("campaign_title_label"), campaign.Title,
+		a.catalog.T("campaign_project_label"), projectLabel,
+		a.catalog.T("campaign_status_label"), campaign.Status,
+		a.catalog.T("campaign_source_run_label"), campaign.SourceRunID,
+		a.catalog.T("campaign_baseline_label"), campaignValueOrDash(strings.TrimSpace(campaign.BaselineRunID)),
+		a.catalog.T("campaign_findings_label"), len(campaign.FindingFingerprints),
+		a.catalog.T("campaign_published_issues_label"), len(campaign.PublishedIssues),
+	); err != nil {
+		return err
+	}
+	if summary := strings.TrimSpace(campaign.Summary); summary != "" {
+		_, err := fmt.Fprintf(out, "%s: %s\n", a.catalog.T("campaign_summary_label"), summary)
+		return err
+	}
+	return nil
+}
+
+func (a *App) publishCampaignToGitHub(ctx context.Context, campaignID, repoFlag string) error {
+	repoFlag = strings.TrimSpace(repoFlag)
+	if repoFlag == "" {
+		return fmt.Errorf("%s", a.catalog.T("campaign_repo_required"))
+	}
+	campaign, err := a.loadCampaign(campaignID)
+	if err != nil {
+		return err
+	}
+	project, ok := a.service.GetProject(campaign.ProjectID)
+	if !ok {
+		return fmt.Errorf("%s", a.catalog.T("project_not_found", campaign.ProjectID))
+	}
+	if _, ok := a.service.GetRun(campaign.SourceRunID); !ok {
+		return fmt.Errorf("%s", a.catalog.T("run_not_found", campaign.SourceRunID))
+	}
+	findings := campaignScopedFindings(a.service.ListFindings(campaign.SourceRunID), campaign.FindingFingerprints)
+	if len(findings) == 0 {
+		return fmt.Errorf("campaign %s has no live findings to publish", campaign.ID)
+	}
+	token, _, err := ghint.ResolveToken(ctx, nil)
+	if err != nil {
+		return err
+	}
+	repo, err := ghint.ResolveRepository(a.githubCampaignMetadataRoot(project), repoFlag, nil)
+	if err != nil {
+		return err
+	}
+	repoName := repo.Owner + "/" + repo.Name
+	for _, published := range campaign.PublishedIssues {
+		if published.Provider == "github" && published.Repo == repoName {
+			pterm.Info.Printf("%s\n", a.catalog.T("campaigns_already_published", campaign.ID, repoName, published.Number))
+			return nil
+		}
+	}
+	client, err := ghint.NewClient(token, nil)
+	if err != nil {
+		return err
+	}
+	issue, err := client.CreateIssue(ctx, repo, ghint.BuildCampaignIssuePayload(campaign, findings))
+	if err != nil {
+		return err
+	}
+	st, err := a.campaignStore()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	updated, err := st.UpdateCampaign(campaign.ID, func(current domain.Campaign) (domain.Campaign, error) {
+		now := time.Now().UTC()
+		current.UpdatedAt = now
+		current.PublishedIssues = append(current.PublishedIssues, domain.CampaignIssueRef{
+			Provider: "github",
+			Repo:     repoName,
+			Number:   issue.Number,
+			URL:      issue.URL,
+			State:    issue.State,
+		})
+		return current, nil
+	})
+	if err != nil {
+		return err
+	}
+	pterm.Success.Printf("%s\n", a.catalog.T("campaigns_published", updated.ID, repo.Owner, repo.Name, issue.Number))
+	return nil
+}
+
+func campaignScopedFindings(findings []domain.Finding, fingerprints []string) []domain.Finding {
+	if len(findings) == 0 || len(fingerprints) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		fingerprint = strings.TrimSpace(fingerprint)
+		if fingerprint == "" {
+			continue
+		}
+		allowed[fingerprint] = struct{}{}
+	}
+	scoped := make([]domain.Finding, 0, len(allowed))
+	for _, finding := range findings {
+		if _, ok := allowed[finding.Fingerprint]; !ok {
+			continue
+		}
+		scoped = append(scoped, finding)
+	}
+	return scoped
+}
+
+func (a *App) generateCampaignID(projectID, runID string) string {
+	return fmt.Sprintf("cmp-%s-%s-%d", sanitizeIDComponent(projectID), sanitizeIDComponent(runID), time.Now().UTC().UnixNano())
+}
+
+func (a *App) campaignProjectLabel(projectID string) string {
+	if project, ok := a.service.GetProject(projectID); ok {
+		if label := strings.TrimSpace(project.DisplayName); label != "" {
+			return label
+		}
+		if label := strings.TrimSpace(project.LocationHint); label != "" {
+			return label
+		}
+	}
+	return projectID
+}
+
+func (a *App) githubCampaignMetadataRoot(project domain.Project) string {
+	if root := strings.TrimSpace(project.LocationHint); root != "" {
+		return root
+	}
+	if root := strings.TrimSpace(a.cwd); root != "" {
+		return root
+	}
+	return "."
+}
+
+func sanitizeIDComponent(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "campaign"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune('-')
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func campaignValueOrDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "n/a"
+	}
+	return value
+}
+
+func (a *App) githubCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "github",
+		Short: "GitHub publishing",
+	}
+	command.AddCommand(a.githubExportCustomPatternsCommand())
+	command.AddCommand(a.githubUploadSARIFCommand())
+	command.AddCommand(a.githubSubmitDepsCommand())
+	command.AddCommand(a.githubPushProtectCommand())
+	command.AddCommand(a.githubCreateIssuesFromCampaignCommand())
+	return command
+}
+
+func (a *App) githubCreateIssuesFromCampaignCommand() *cobra.Command {
+	var repoFlag string
+
+	command := &cobra.Command{
+		Use:   "create-issues-from-campaign [campaign-id]",
+		Short: a.catalog.T("campaigns_publish_github_title"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.publishCampaignToGitHub(cmd.Context(), strings.TrimSpace(args[0]), repoFlag)
+		},
+	}
+	command.Flags().StringVar(&repoFlag, "repo", "", a.catalog.T("campaign_repo_flag"))
+	_ = command.MarkFlagRequired("repo")
+	return command
+}
+
+func (a *App) githubExportCustomPatternsCommand() *cobra.Command {
+	var output string
+
+	command := &cobra.Command{
+		Use:   "export-custom-patterns",
+		Short: "Export IronSentinel secret patterns in GitHub custom pattern form",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sources := agent.PushProtectionCustomPatterns()
+			items := make([]ghint.CustomPatternSource, 0, len(sources))
+			for _, source := range sources {
+				items = append(items, ghint.CustomPatternSource{
+					RuleID:      source.RuleID,
+					Title:       source.Title,
+					Description: source.Description,
+					Pattern:     source.Pattern,
+				})
+			}
+			manifest := ghint.BuildCustomPatternManifest(items)
+			body, err := json.MarshalIndent(manifest, "", "  ")
+			if err != nil {
+				return err
+			}
+			body = append(body, '\n')
+			if strings.TrimSpace(output) == "" {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			if err := os.WriteFile(output, body, 0o644); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Saved GitHub custom pattern manifest to %s\n", output)
+			return err
+		},
+	}
+
+	command.Flags().StringVar(&output, "output", "", "Write the GitHub custom pattern manifest to a file")
+	return command
+}
+
+func (a *App) githubUploadSARIFCommand() *cobra.Command {
+	var (
+		repoFlag    string
+		refFlag     string
+		shaFlag     string
+		baselineRun string
+	)
+
+	command := &cobra.Command{
+		Use:   "upload-sarif [run-id]",
+		Short: "Upload SARIF to GitHub code scanning",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runID := strings.TrimSpace(args[0])
+			report, err := a.service.BuildRunReport(runID, baselineRun)
+			if err != nil {
+				return err
+			}
+			sarif, err := reports.Export("sarif", report)
+			if err != nil {
+				return err
+			}
+			token, _, err := ghint.ResolveToken(cmd.Context(), nil)
+			if err != nil {
+				return err
+			}
+			metadataRoot := a.githubMetadataRoot(report)
+			repo, err := ghint.ResolveRepository(metadataRoot, repoFlag, nil)
+			if err != nil {
+				return err
+			}
+			sha, ref, err := ghint.ResolveGitMetadata(metadataRoot, shaFlag, refFlag, nil)
+			if err != nil {
+				return err
+			}
+			client, err := ghint.NewClient(token, nil)
+			if err != nil {
+				return err
+			}
+			if err := client.UploadSARIF(cmd.Context(), repo, ghint.SARIFUploadRequest{
+				CommitSHA: sha,
+				Ref:       ref,
+				SARIF:     sarif,
+				Category:  "ironsentinel/" + runID,
+			}); err != nil {
+				return err
+			}
+			pterm.Success.Printf("Uploaded SARIF for %s to %s/%s\n", runID, repo.Owner, repo.Name)
+			return nil
+		},
+	}
+
+	command.Flags().StringVar(&repoFlag, "repo", "", "GitHub repository in owner/name form")
+	command.Flags().StringVar(&refFlag, "ref", "", "Git ref override")
+	command.Flags().StringVar(&shaFlag, "sha", "", "Commit SHA override")
+	command.Flags().StringVar(&baselineRun, "baseline", "", "Explicit baseline run ID")
+	return command
+}
+
+func (a *App) githubMetadataRoot(report domain.RunReport) string {
+	if project, ok := a.service.GetProject(report.Run.ProjectID); ok {
+		if root := strings.TrimSpace(project.LocationHint); root != "" {
+			return root
+		}
+	}
+	if root := strings.TrimSpace(a.cwd); root != "" {
+		return root
+	}
+	return "."
+}
+
+func (a *App) githubSubmitDepsCommand() *cobra.Command {
+	var (
+		repoFlag  string
+		refFlag   string
+		shaFlag   string
+		runIDFlag string
+	)
+	command := &cobra.Command{
+		Use:   "submit-deps [project-id]",
+		Short: "Submit dependencies to the GitHub dependency graph",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID := ""
+			if len(args) > 0 {
+				projectID = strings.TrimSpace(args[0])
+			}
+			project, run, packages, err := a.githubDependencyInventory(projectID, runIDFlag)
+			if err != nil {
+				return err
+			}
+
+			token, _, err := ghint.ResolveToken(cmd.Context(), nil)
+			if err != nil {
+				return err
+			}
+			metadataRoot := a.githubDependencyMetadataRoot(project)
+			repo, err := ghint.ResolveRepository(metadataRoot, repoFlag, nil)
+			if err != nil {
+				return err
+			}
+			sha, ref, err := ghint.ResolveGitMetadata(metadataRoot, shaFlag, refFlag, nil)
+			if err != nil {
+				return err
+			}
+
+			snapshot, err := ghint.BuildDependencySnapshot(project, run, project.DetectedStacks, packages)
+			if err != nil {
+				return err
+			}
+			snapshot.Sha = sha
+			snapshot.Ref = ref
+
+			client, err := ghint.NewClient(token, nil)
+			if err != nil {
+				return err
+			}
+			if err := client.SubmitDependencies(cmd.Context(), repo, snapshot); err != nil {
+				return err
+			}
+			pterm.Success.Printf("Submitted dependency snapshot for %s to %s/%s\n", project.DisplayName, repo.Owner, repo.Name)
+			return nil
+		},
+	}
+	command.Flags().StringVar(&repoFlag, "repo", "", "GitHub repository in owner/name form")
+	command.Flags().StringVar(&refFlag, "ref", "", "Git ref override")
+	command.Flags().StringVar(&shaFlag, "sha", "", "Commit SHA override")
+	command.Flags().StringVar(&runIDFlag, "run", "", "Run ID to source dependency inventory from")
+	return command
+}
+
+func (a *App) githubDependencyMetadataRoot(project domain.Project) string {
+	if root := strings.TrimSpace(project.LocationHint); root != "" {
+		return root
+	}
+	if root := strings.TrimSpace(a.cwd); root != "" {
+		return root
+	}
+	return "."
+}
+
+func (a *App) githubDependencyInventory(projectID, runID string) (domain.Project, *domain.ScanRun, []ghint.DependencyPackage, error) {
+	project, err := a.resolveProjectReference(projectID)
+	if err != nil {
+		return domain.Project{}, nil, nil, err
+	}
+
+	run, err := a.githubDependencyRun(project, runID)
+	if err != nil {
+		return project, nil, nil, err
+	}
+
+	packages, err := a.githubDependencyPackages(*run)
+	if err != nil {
+		return project, run, nil, err
+	}
+	if len(packages) == 0 {
+		return project, run, nil, fmt.Errorf("no dependency inventory available")
+	}
+	return project, run, packages, nil
+}
+
+func (a *App) githubDependencyRun(project domain.Project, runID string) (*domain.ScanRun, error) {
+	runID = strings.TrimSpace(runID)
+	if runID != "" {
+		run, ok := a.service.GetRun(runID)
+		if !ok {
+			return nil, fmt.Errorf("run not found: %s", runID)
+		}
+		if run.ProjectID != project.ID {
+			return nil, fmt.Errorf("run %s belongs to a different project", runID)
+		}
+		return &run, nil
+	}
+
+	runs := a.service.ListRuns()
+	for _, run := range runs {
+		if run.ProjectID != project.ID {
+			continue
+		}
+		if run.Status != domain.ScanCompleted {
+			continue
+		}
+		packages, err := a.githubDependencyPackages(run)
+		if err != nil {
+			continue
+		}
+		if len(packages) == 0 {
+			continue
+		}
+		current := run
+		return &current, nil
+	}
+	return nil, fmt.Errorf("no dependency inventory available")
+}
+
+func (a *App) githubDependencyPackages(run domain.ScanRun) ([]ghint.DependencyPackage, error) {
+	type cyclonedxComponent struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		PURL    string `json:"purl"`
+		Type    string `json:"type"`
+	}
+	type cyclonedxDocument struct {
+		Components []cyclonedxComponent `json:"components"`
+	}
+
+	packages := make([]ghint.DependencyPackage, 0)
+	seen := make(map[string]struct{})
+	for _, artifact := range run.ArtifactRefs {
+		if artifact.Kind != "sbom" || strings.TrimSpace(artifact.URI) == "" || artifact.URI == "inline" {
+			continue
+		}
+		body, err := os.ReadFile(artifact.URI)
+		if err != nil {
+			continue
+		}
+		var document cyclonedxDocument
+		if err := json.Unmarshal(body, &document); err != nil {
+			continue
+		}
+		for _, component := range document.Components {
+			pkg, ok := dependencyPackageFromCycloneDX(component)
+			if !ok {
+				continue
+			}
+			key := pkg.PackageURL
+			if strings.TrimSpace(key) == "" {
+				key = pkg.Name + "@" + pkg.Version + "|" + pkg.Ecosystem
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			packages = append(packages, pkg)
+		}
+	}
+	return packages, nil
+}
+
+func dependencyPackageFromCycloneDX(component struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	PURL    string `json:"purl"`
+	Type    string `json:"type"`
+}) (ghint.DependencyPackage, bool) {
+	name := strings.TrimSpace(component.Name)
+	if name == "" {
+		return ghint.DependencyPackage{}, false
+	}
+
+	purl := strings.TrimSpace(component.PURL)
+	if purl != "" {
+		return ghint.DependencyPackage{
+			Name:         name,
+			Version:      strings.TrimSpace(component.Version),
+			Ecosystem:    dependencyPackageEcosystemFromPURL(purl),
+			PackageURL:   purl,
+			Relationship: "indirect",
+		}, true
+	}
+
+	version := strings.TrimSpace(component.Version)
+	if version == "" {
+		return ghint.DependencyPackage{}, false
+	}
+
+	return ghint.DependencyPackage{
+		Name:         name,
+		Version:      version,
+		Ecosystem:    "generic",
+		PackageURL:   "",
+		Relationship: "indirect",
+	}, true
+}
+
+func dependencyPackageEcosystemFromPURL(purl string) string {
+	trimmed := strings.TrimSpace(purl)
+	if strings.HasPrefix(trimmed, "pkg:") {
+		trimmed = strings.TrimPrefix(trimmed, "pkg:")
+		if slash := strings.Index(trimmed, "/"); slash > 0 {
+			ecosystem := strings.ToLower(strings.TrimSpace(trimmed[:slash]))
+			if ecosystem != "" {
+				return ecosystem
+			}
+		}
+	}
+	return "generic"
+}
+
 func (a *App) defaultRunReportPath(runID, format string) string {
 	ext := strings.ToLower(strings.TrimSpace(format))
 	if ext == "" {
@@ -1978,23 +2340,38 @@ func (a *App) defaultRunReportPath(runID, format string) string {
 }
 
 func (a *App) writeRunExport(runID, format, output, baselineRunID string) (string, error) {
-	content, err := a.service.Export(runID, format, baselineRunID)
+	return a.writeRunExportWithVEX(runID, format, output, baselineRunID, "")
+}
+
+func (a *App) writeRunExportWithVEX(runID, format, output, baselineRunID, vexPath string) (string, error) {
+	content, err := a.service.ExportWithVEX(runID, format, baselineRunID, vexPath)
 	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(output) == "" {
 		output = a.defaultRunReportPath(runID, format)
 	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+	artifact, err := evidence.PolicyFromConfig(a.cfg).WriteFile(output, "report", "Run report export", []byte(content))
+	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(output, []byte(content), 0o644); err != nil {
-		return "", err
+	return artifact.URI, nil
+}
+
+func (a *App) verifySBOMAttestation(runID, attestationPath string) error {
+	run, ok := a.service.GetRun(runID)
+	if !ok {
+		return fmt.Errorf("%s", a.catalog.T("run_not_found", runID))
 	}
-	if err := os.Chmod(output, 0o600); err != nil {
-		return "", err
+	attestation, err := sbom.ParseAttestationFile(attestationPath)
+	if err != nil {
+		return err
 	}
-	return output, nil
+	if err := sbom.VerifyAttestation(run, attestation); err != nil {
+		return err
+	}
+	pterm.Success.Printf("%s\n", a.catalog.T("run_verify_sbom_attestation_passed", run.ID))
+	return nil
 }
 
 func (a *App) guidedSuppression(runID, fingerprint, reason string, days int, ticket, owner string) error {
@@ -2331,7 +2708,7 @@ func (a *App) reviewFinding(runID, fingerprint string) error {
 	}
 }
 
-func (a *App) guidedDASTPlan(projectID string, targets []domain.DastTarget, active bool) error {
+func (a *App) guidedDASTPlan(projectID string, targets []domain.DastTarget, authProfiles []domain.DastAuthProfile, active bool) error {
 	if projectID == "" {
 		if !a.isInteractiveTerminal() {
 			return fmt.Errorf("%s", a.catalog.T("project_select_required"))
@@ -2360,7 +2737,7 @@ func (a *App) guidedDASTPlan(projectID string, targets []domain.DastTarget, acti
 			targets = []domain.DastTarget{{
 				Name:     strings.TrimSpace(targetName),
 				URL:      strings.TrimSpace(targetURL),
-				AuthType: "none",
+				AuthType: domain.DastAuthNone,
 			}}
 		}
 	}
@@ -2373,7 +2750,7 @@ func (a *App) guidedDASTPlan(projectID string, targets []domain.DastTarget, acti
 		active = selection
 	}
 
-	plan := a.service.DASTPlan(projectID, targets, active)
+	plan := a.service.DASTPlan(projectID, targets, authProfiles, active)
 	return a.renderDASTPlan(plan, targets)
 }
 
@@ -2487,7 +2864,10 @@ func (a *App) guidedScan(ctx context.Context, defaults scanWizardDefaults) error
 		return err
 	}
 
-	targets := parseTargets(defaults.DASTTargets)
+	targets, authProfiles, err := prepareDASTConfiguration(defaults.DASTTargets, defaults.DASTTargetAuth, defaults.DASTAuthFile)
+	if err != nil {
+		return err
+	}
 	if modeSelection == string(domain.ModeActive) || len(targets) > 0 {
 		addDAST := len(targets) > 0
 		if !addDAST {
@@ -2508,22 +2888,23 @@ func (a *App) guidedScan(ctx context.Context, defaults scanWizardDefaults) error
 			targets = []domain.DastTarget{{
 				Name:     strings.TrimSpace(targetName),
 				URL:      strings.TrimSpace(targetURL),
-				AuthType: "none",
+				AuthType: domain.DastAuthNone,
 			}}
 		}
 	}
 
 	profile := domain.ScanProfile{
-		Mode:         domain.ScanMode(modeSelection),
-		Isolation:    domain.IsolationMode(isolationSelection),
-		Coverage:     domain.CoverageProfile(coverageSelection),
-		PresetID:     domain.CompliancePreset(presetSelection),
-		Modules:      modules,
-		SeverityGate: domain.Severity(gateSelection),
-		PolicyID:     defaults.PolicyID,
-		AllowBuild:   allowBuild,
-		AllowNetwork: allowNetwork,
-		DASTTargets:  targets,
+		Mode:             domain.ScanMode(modeSelection),
+		Isolation:        domain.IsolationMode(isolationSelection),
+		Coverage:         domain.CoverageProfile(coverageSelection),
+		PresetID:         domain.CompliancePreset(presetSelection),
+		Modules:          modules,
+		SeverityGate:     domain.Severity(gateSelection),
+		PolicyID:         defaults.PolicyID,
+		AllowBuild:       allowBuild,
+		AllowNetwork:     allowNetwork,
+		DASTTargets:      targets,
+		DASTAuthProfiles: authProfiles,
 	}
 	profile = a.applyCompliancePreset(project, profile, false, false, false, false, false, false, customModules)
 	profile.Modules = a.resolveModulesForProject(project, profile)
@@ -3259,39 +3640,7 @@ func uniqueStrings(items []string) []string {
 }
 
 func orderResolvedModules(items []string) []string {
-	out := uniqueStrings(items)
-	sort.SliceStable(out, func(i, j int) bool {
-		left := moduleExecutionOrderKey(out[i])
-		right := moduleExecutionOrderKey(out[j])
-		if left != right {
-			return left < right
-		}
-		return out[i] < out[j]
-	})
-	return out
-}
-
-func moduleExecutionOrderKey(module string) int {
-	switch strings.TrimSpace(module) {
-	case "stack-detector":
-		return 0
-	case "surface-inventory", "script-audit", "runtime-config-audit":
-		return 1
-	case "secret-heuristics", "gitleaks":
-		return 2
-	case "semgrep", "codeql":
-		return 3
-	case "dependency-confusion", "trivy", "syft", "grype", "osv-scanner", "licensee", "scancode", "govulncheck", "staticcheck", "knip", "vulture":
-		return 4
-	case "checkov", "tfsec", "kics", "trivy-image":
-		return 5
-	case "malware-signature", "clamscan", "yara-x", "binary-entropy":
-		return 6
-	case "nuclei", "zaproxy":
-		return 7
-	default:
-		return 8
-	}
+	return domain.OrderedModuleNames(items)
 }
 
 func requiredRuntimeModules(modules []string) []string {
@@ -3576,7 +3925,7 @@ func parseTargets(items []string) []domain.DastTarget {
 		targets = append(targets, domain.DastTarget{
 			Name:     strings.TrimSpace(name),
 			URL:      strings.TrimSpace(url),
-			AuthType: "none",
+			AuthType: domain.DastAuthNone,
 		})
 	}
 	return targets

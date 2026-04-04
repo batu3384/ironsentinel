@@ -79,18 +79,18 @@ func (n *daemonNotifier) Handle(event domain.StreamEvent) {
 		"status":  event.Run.Status,
 	}
 	if n.opts.DriftDetection && event.Run.Status == domain.ScanCompleted {
-		if delta, _, baseline, err := n.app.service.GetRunDelta(event.Run.ID, ""); err == nil {
-			payload["delta"] = delta
-			if baseline != nil {
-				payload["baselineRunId"] = baseline.ID
+		if report, err := n.app.service.BuildRunReport(event.Run.ID, ""); err == nil {
+			payload["delta"] = report.Delta
+			if report.Baseline != nil {
+				payload["baselineRunId"] = report.Baseline.ID
 			}
 			message = fmt.Sprintf(
 				"IronSentinel scheduled run %s for %s completed. New=%d Existing=%d Resolved=%d Total=%d.",
 				event.Run.ID,
 				projectLabel,
-				delta.CountsByChange[domain.FindingNew],
-				delta.CountsByChange[domain.FindingExisting],
-				delta.CountsByChange[domain.FindingResolved],
+				report.Delta.CountsByChange[domain.FindingNew],
+				report.Delta.CountsByChange[domain.FindingExisting],
+				report.Delta.CountsByChange[domain.FindingResolved],
 				event.Run.Summary.TotalFindings,
 			)
 		}

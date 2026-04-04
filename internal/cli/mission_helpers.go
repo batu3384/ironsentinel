@@ -360,6 +360,9 @@ func (a *App) findingPriorityLabel(finding domain.Finding) string {
 	if finding.EPSSPercent > 0 {
 		parts = append(parts, fmt.Sprintf("EPSS %.1f%%", finding.EPSSPercent))
 	}
+	if signal := a.findingSignalSummary(finding); signal != "-" {
+		parts = append(parts, signal)
+	}
 	return strings.Join(parts, " | ")
 }
 
@@ -377,10 +380,124 @@ func (a *App) findingExposureSummary(finding domain.Finding) string {
 	if finding.KEV {
 		parts = append(parts, "KEV")
 	}
+	if signal := a.findingSignalSummary(finding); signal != "-" {
+		parts = append(parts, fmt.Sprintf("%s %s", a.catalog.T("reason"), signal))
+	}
 	if len(parts) == 0 {
 		return "-"
 	}
 	return strings.Join(parts, " | ")
+}
+
+func (a *App) findingSignalSummary(finding domain.Finding) string {
+	signals := a.findingSignals(finding)
+	if len(signals) == 0 {
+		return "-"
+	}
+	return strings.Join(signals, " | ")
+}
+
+func (a *App) findingSignals(finding domain.Finding) []string {
+	if finding.Category != domain.CategorySCA {
+		return nil
+	}
+	signals := make([]string, 0, 5)
+	if reachability := a.reachabilitySignal(finding.Reachability); reachability != "" {
+		signals = append(signals, reachability)
+	}
+	if reason := a.findingSupplyChainReasonLabel(finding.Tags); reason != "" {
+		signals = append(signals, reason)
+	}
+	if vexStatus := a.findingVEXStatusLabel(finding.VEXStatus); vexStatus != "" {
+		signals = append(signals, vexStatus)
+	}
+	if vexJustification := a.findingVEXJustificationLabel(finding.VEXJustification); vexJustification != "" {
+		signals = append(signals, vexJustification)
+	}
+	return signals
+}
+
+func (a *App) findingVEXStatusLabel(status domain.VEXStatus) string {
+	switch status {
+	case domain.VEXStatusAffected:
+		return a.catalog.T("finding_vex_affected")
+	case domain.VEXStatusNotAffected:
+		return a.catalog.T("finding_vex_not_affected")
+	case domain.VEXStatusFixed:
+		return a.catalog.T("finding_vex_fixed")
+	case domain.VEXStatusUnderInvestigation:
+		return a.catalog.T("finding_vex_under_investigation")
+	default:
+		return ""
+	}
+}
+
+func (a *App) findingVEXJustificationLabel(justification string) string {
+	value := strings.TrimSpace(justification)
+	if value == "" {
+		return ""
+	}
+	switch strings.ToLower(value) {
+	case "vulnerable_code_not_present":
+		return a.catalog.T("finding_vex_justification_vulnerable_code_not_present")
+	default:
+		value = strings.ReplaceAll(value, "_", " ")
+		return value
+	}
+}
+
+func (a *App) reachabilityDisplay(value domain.Reachability) string {
+	switch domain.NormalizeReachability(value.String()) {
+	case domain.ReachabilityReachable:
+		return a.catalog.T("finding_reachability_reachable")
+	case domain.ReachabilityPossible:
+		return a.catalog.T("finding_reachability_possible")
+	case domain.ReachabilityUnknown:
+		return a.catalog.T("finding_reachability_unknown")
+	case domain.ReachabilityRepository:
+		return a.catalog.T("finding_reachability_repository")
+	case domain.ReachabilityImage:
+		return a.catalog.T("finding_reachability_image")
+	case domain.ReachabilityInfrastructure:
+		return a.catalog.T("finding_reachability_infrastructure")
+	case domain.ReachabilityExecutionSurface:
+		return a.catalog.T("finding_reachability_execution_surface")
+	case domain.ReachabilityNotApplicable:
+		return a.catalog.T("finding_reachability_not_applicable")
+	default:
+		return value.String()
+	}
+}
+
+func (a *App) reachabilitySignal(value domain.Reachability) string {
+	switch domain.NormalizeReachability(value.String()) {
+	case domain.ReachabilityReachable:
+		return a.catalog.T("finding_signal_reachable_path")
+	case domain.ReachabilityPossible:
+		return a.catalog.T("finding_signal_possible_path")
+	case domain.ReachabilityRepository:
+		return a.catalog.T("finding_signal_repository_exposure")
+	case domain.ReachabilityImage:
+		return a.catalog.T("finding_signal_image_exposure")
+	case domain.ReachabilityInfrastructure:
+		return a.catalog.T("finding_signal_infrastructure_exposure")
+	case domain.ReachabilityExecutionSurface:
+		return a.catalog.T("finding_signal_execution_surface")
+	default:
+		return ""
+	}
+}
+
+func (a *App) findingSupplyChainReasonLabel(tags []string) string {
+	for _, tag := range tags {
+		switch strings.ToLower(strings.TrimSpace(tag)) {
+		case "supply-chain:dependency-confusion":
+			return a.catalog.T("finding_signal_dependency_confusion")
+		case "supply-chain:malicious":
+			return a.catalog.T("finding_signal_malicious_package")
+		}
+	}
+	return ""
 }
 
 func (a *App) findingAttackChainSummary(finding domain.Finding) string {

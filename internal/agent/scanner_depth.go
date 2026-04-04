@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -70,7 +71,12 @@ func buildZAPAutomationCommand(cfg config.Config, binary string, execution modul
 		return nil, "", errSkipModule("DAST target URL is empty")
 	}
 
-	planExecPath, _, err := writeExecutionFile(execution, "zap-automation.yaml", []byte(buildZAPAutomationPlan(target, execution)), 0o644)
+	resolvedTarget, authProfile, err := domain.ResolveDastTargetAuth(target, execution.request.Profile.DASTAuthProfiles)
+	if err != nil {
+		return nil, "", errSkipModule(err.Error())
+	}
+
+	planExecPath, _, err := writeExecutionFile(execution, "zap-automation.yaml", []byte(buildZAPAutomationPlan(resolvedTarget, authProfile, execution)), 0o600)
 	if err != nil {
 		return nil, "", err
 	}
@@ -81,6 +87,13 @@ func buildZAPAutomationCommand(cfg config.Config, binary string, execution modul
 	}
 	command := exec.Command(binary, "-dir", zapHomeExecPath, "-cmd", "-autorun", planExecPath)
 	command.Dir = execution.request.TargetPath
+	if authProfile != nil {
+		zapEnv, err := buildZAPAuthEnv(resolvedTarget, *authProfile)
+		if err != nil {
+			return nil, "", errSkipModule(err.Error())
+		}
+		command.Env = append(os.Environ(), zapEnv...)
+	}
 	return command, reportExecPath, nil
 }
 
@@ -272,7 +285,7 @@ func buildCodeQLScript(binary, sourceRoot, language, querySuite, dbPath, reportP
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution) string {
+func buildZAPAutomationPlan(target domain.DastTarget, authProfile *domain.DastAuthProfile, execution moduleExecution) string {
 	reportDir := execution.outputDir
 	if execution.mode != domain.IsolationContainer {
 		reportDir = execution.hostOutputDir
@@ -284,11 +297,17 @@ func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution)
 		"    - name: ironsentinel",
 		"      urls:",
 		fmt.Sprintf("        - %s", yamlQuote(target.URL)),
+	}
+	if authProfile != nil {
+		lines = append(lines, buildZAPContextAuthLines(*authProfile)...)
+		lines = append(lines, buildZAPContextVerificationLines(*authProfile)...)
+	}
+	lines = append(lines,
 		"  parameters:",
 		"    failOnError: true",
 		"    progressToStdout: true",
 		"jobs:",
-	}
+	)
 
 	if looksLikeOpenAPISpec(target.URL) {
 		lines = append(lines,
@@ -297,6 +316,9 @@ func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution)
 			fmt.Sprintf("      apiUrl: %s", yamlQuote(target.URL)),
 			"      context: ironsentinel",
 		)
+		if authProfile != nil && authProfile.Name != "" {
+			lines = append(lines, fmt.Sprintf("      user: %s", yamlQuote(authProfile.Name)))
+		}
 	} else {
 		lines = append(lines,
 			"  - type: spider",
@@ -305,6 +327,9 @@ func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution)
 			fmt.Sprintf("      url: %s", yamlQuote(target.URL)),
 			"      maxDuration: 3",
 		)
+		if authProfile != nil && authProfile.Name != "" {
+			lines = append(lines, fmt.Sprintf("      user: %s", yamlQuote(authProfile.Name)))
+		}
 	}
 
 	lines = append(lines,
@@ -321,6 +346,9 @@ func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution)
 			"      maxRuleDurationInMins: 2",
 			"      maxScanDurationInMins: 8",
 		)
+		if authProfile != nil && authProfile.Name != "" {
+			lines = append(lines, fmt.Sprintf("      user: %s", yamlQuote(authProfile.Name)))
+		}
 	}
 
 	lines = append(lines,
@@ -332,6 +360,137 @@ func buildZAPAutomationPlan(target domain.DastTarget, execution moduleExecution)
 	)
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func buildZAPContextAuthLines(profile domain.DastAuthProfile) []string {
+	switch profile.Type {
+	case domain.DastAuthBrowser:
+		username := strings.TrimSpace(os.Getenv(profile.UsernameEnv))
+		password := strings.TrimSpace(os.Getenv(profile.PasswordEnv))
+		if username == "" || password == "" {
+			return nil
+		}
+		lines := []string{
+			"      authentication:",
+			"        method: browser",
+			"        parameters:",
+			fmt.Sprintf("          loginPageUrl: %s", yamlQuote(profile.LoginPageURL)),
+		}
+		if profile.LoginPageWait > 0 {
+			lines = append(lines, fmt.Sprintf("          loginPageWait: %d", profile.LoginPageWait))
+		}
+		if profile.BrowserID != "" {
+			lines = append(lines, fmt.Sprintf("          browserId: %s", yamlQuote(profile.BrowserID)))
+		}
+		lines = append(lines,
+			"      sessionManagement:",
+			"        method: autodetect",
+			"      users:",
+			fmt.Sprintf("        - name: %s", yamlQuote(profile.Name)),
+			"          credentials:",
+			fmt.Sprintf("            username: %s", yamlQuote(username)),
+			fmt.Sprintf("            password: %s", yamlQuote(password)),
+		)
+		return lines
+	case domain.DastAuthForm:
+		lines := []string{
+			"      authentication:",
+			"        method: form",
+			"        parameters:",
+			fmt.Sprintf("          loginPageUrl: %s", yamlQuote(profile.LoginPageURL)),
+			fmt.Sprintf("          loginRequestUrl: %s", yamlQuote(profile.LoginRequestURL)),
+			fmt.Sprintf("          loginRequestBody: %s", yamlQuote(profile.LoginRequestBody)),
+		}
+		return lines
+	default:
+		return nil
+	}
+}
+
+func buildZAPContextVerificationLines(profile domain.DastAuthProfile) []string {
+	if profile.Type == domain.DastAuthBrowser {
+		return []string{
+			"      verification:",
+			"        method: autodetect",
+		}
+	}
+	if profile.Type == domain.DastAuthForm {
+		lines := []string{
+			"      verification:",
+			"        method: response",
+		}
+		if profile.LoggedInRegex != "" {
+			lines = append(lines, fmt.Sprintf("        loggedInRegex: %s", yamlQuote(profile.LoggedInRegex)))
+		}
+		if profile.LoggedOutRegex != "" {
+			lines = append(lines, fmt.Sprintf("        loggedOutRegex: %s", yamlQuote(profile.LoggedOutRegex)))
+		}
+		return lines
+	}
+	if strings.TrimSpace(profile.SessionCheckURL) == "" {
+		return nil
+	}
+
+	lines := []string{
+		"      verification:",
+		"        method: response",
+		fmt.Sprintf("        pollUrl: %s", yamlQuote(profile.SessionCheckURL)),
+	}
+	if profile.SessionCheckPattern != "" {
+		lines = append(lines, fmt.Sprintf("        pollAdditionalHeadersRegex: %s", yamlQuote(profile.SessionCheckPattern)))
+	}
+	return lines
+}
+
+func buildZAPAuthEnv(target domain.DastTarget, profile domain.DastAuthProfile) ([]string, error) {
+	site := strings.TrimSpace(target.URL)
+
+	switch profile.Type {
+	case domain.DastAuthBearer:
+		token := strings.TrimSpace(os.Getenv(profile.SecretEnv))
+		if token == "" {
+			return nil, fmt.Errorf("dast auth profile %q requires env %s", profile.Name, profile.SecretEnv)
+		}
+		return []string{
+			"ZAP_AUTH_HEADER=Authorization",
+			"ZAP_AUTH_HEADER_VALUE=Bearer " + token,
+			"ZAP_AUTH_HEADER_SITE=" + site,
+		}, nil
+	case domain.DastAuthHeader:
+		value := strings.TrimSpace(os.Getenv(profile.SecretEnv))
+		if value == "" {
+			return nil, fmt.Errorf("dast auth profile %q requires env %s", profile.Name, profile.SecretEnv)
+		}
+		headerName := strings.TrimSpace(profile.HeaderName)
+		if headerName == "" {
+			return nil, fmt.Errorf("dast auth profile %q requires headerName", profile.Name)
+		}
+		return []string{
+			"ZAP_AUTH_HEADER=" + headerName,
+			"ZAP_AUTH_HEADER_VALUE=" + value,
+			"ZAP_AUTH_HEADER_SITE=" + site,
+		}, nil
+	case domain.DastAuthBasic:
+		username := strings.TrimSpace(os.Getenv(profile.UsernameEnv))
+		password := strings.TrimSpace(os.Getenv(profile.PasswordEnv))
+		if username == "" || password == "" {
+			return nil, fmt.Errorf("dast auth profile %q requires envs %s and %s", profile.Name, profile.UsernameEnv, profile.PasswordEnv)
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+		return []string{
+			"ZAP_AUTH_HEADER=Authorization",
+			"ZAP_AUTH_HEADER_VALUE=Basic " + encoded,
+			"ZAP_AUTH_HEADER_SITE=" + site,
+		}, nil
+	case domain.DastAuthBrowser:
+		return nil, nil
+	case domain.DastAuthForm:
+		return nil, nil
+	case domain.DastAuthNone, "":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("dast auth profile %q type %q is not supported", profile.Name, profile.Type)
+	}
 }
 
 func executionArtifactPaths(execution moduleExecution, name string) (string, string) {
@@ -398,11 +557,11 @@ func resolveSARIFConfidence(properties map[string]any, category domain.FindingCa
 	return 0.78
 }
 
-func resolveSARIFReachability(category domain.FindingCategory) string {
+func resolveSARIFReachability(category domain.FindingCategory) domain.Reachability {
 	if category == domain.CategoryDAST {
-		return "reachable"
+		return domain.ReachabilityReachable
 	}
-	return "possible"
+	return domain.ReachabilityPossible
 }
 
 func firstSecuritySeverity(propertySets ...map[string]any) float64 {

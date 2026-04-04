@@ -10,6 +10,7 @@ import (
 
 func enrichFinding(project domain.Project, finding domain.Finding) domain.Finding {
 	enriched := finding
+	enriched.Reachability = domain.NormalizeReachability(finding.Reachability.String())
 	enriched.CWEs = inferCWEs(finding)
 	enriched.CVSS31 = inferCVSS31(finding)
 	enriched.CVSS40 = inferCVSS40(finding, enriched.CVSS31)
@@ -17,6 +18,7 @@ func enrichFinding(project domain.Project, finding domain.Finding) domain.Findin
 	enriched.EPSSScore, enriched.EPSSPercent = inferEPSS(enriched)
 	enriched.AssetValue = inferAssetValue(project, finding)
 	enriched.Compliance = inferComplianceMappings(enriched)
+	enriched.Tags = mergeFindingTags(finding.Tags, deriveFindingTags(enriched)...)
 	enriched.Priority = remediationPriority(enriched)
 	enriched.AttackChain = inferAttackChainSeed(project, finding)
 	return enriched
@@ -254,10 +256,120 @@ func remediationPriority(finding domain.Finding) float64 {
 	if finding.KEV {
 		score *= 1.25
 	}
+	score *= scaPriorityMultiplier(finding)
 	if score > 10 {
 		score = 10
 	}
 	return score
+}
+
+func scaPriorityMultiplier(finding domain.Finding) float64 {
+	if finding.Category != domain.CategorySCA {
+		return 1.0
+	}
+
+	multiplier := reachabilityPriorityMultiplier(finding.Reachability)
+	if hasDependencyConfusionSignal(finding) {
+		multiplier *= 1.25
+	}
+	if hasMaliciousDependencySignal(finding) {
+		multiplier *= 1.15
+	}
+	return multiplier
+}
+
+func reachabilityPriorityMultiplier(reachability domain.Reachability) float64 {
+	switch domain.NormalizeReachability(reachability.String()) {
+	case domain.ReachabilityReachable:
+		return 1.35
+	case domain.ReachabilityPossible:
+		return 1.10
+	case domain.ReachabilityRepository:
+		return 1.05
+	case domain.ReachabilityImage:
+		return 1.02
+	case domain.ReachabilityUnknown:
+		return 0.90
+	default:
+		return 1.0
+	}
+}
+
+func deriveFindingTags(finding domain.Finding) []string {
+	tags := make([]string, 0, 3)
+	if finding.Category == domain.CategorySCA {
+		if reachabilityTag := scaReachabilityTag(finding.Reachability); reachabilityTag != "" {
+			tags = append(tags, reachabilityTag)
+		}
+		if hasDependencyConfusionSignal(finding) {
+			tags = append(tags, "supply-chain:dependency-confusion")
+		}
+		if hasMaliciousDependencySignal(finding) {
+			tags = append(tags, "supply-chain:malicious")
+		}
+	}
+	return tags
+}
+
+func scaReachabilityTag(reachability domain.Reachability) string {
+	value := domain.NormalizeReachability(reachability.String())
+	if value == "" || value == domain.ReachabilityNotApplicable {
+		return ""
+	}
+	return "sca:" + value.String()
+}
+
+func hasDependencyConfusionSignal(finding domain.Finding) bool {
+	module := strings.ToLower(strings.TrimSpace(finding.Module))
+	ruleID := strings.ToLower(strings.TrimSpace(finding.RuleID))
+	title := strings.ToLower(strings.TrimSpace(finding.Title))
+	return module == "dependency-confusion" ||
+		strings.HasPrefix(ruleID, "dependency_confusion.") ||
+		strings.Contains(ruleID, "dependency-confusion") ||
+		strings.Contains(title, "dependency confusion")
+}
+
+func hasMaliciousDependencySignal(finding domain.Finding) bool {
+	if hasDependencyConfusionSignal(finding) {
+		return true
+	}
+	ruleID := strings.ToLower(strings.TrimSpace(finding.RuleID))
+	title := strings.ToLower(strings.TrimSpace(finding.Title))
+	return strings.Contains(ruleID, "malicious") ||
+		strings.Contains(ruleID, "typosquat") ||
+		strings.Contains(ruleID, "repojacking") ||
+		strings.Contains(title, "malicious package") ||
+		strings.Contains(title, "malicious dependency") ||
+		strings.Contains(title, "typosquat") ||
+		strings.Contains(title, "repojacking") ||
+		strings.Contains(title, "package hijack")
+}
+
+func mergeFindingTags(existing []string, derived ...string) []string {
+	if len(existing) == 0 && len(derived) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(existing)+len(derived))
+	merged := make([]string, 0, len(existing)+len(derived))
+	appendTag := func(tag string) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return
+		}
+		key := strings.ToLower(tag)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, tag)
+	}
+	for _, tag := range existing {
+		appendTag(tag)
+	}
+	for _, tag := range derived {
+		appendTag(tag)
+	}
+	return merged
 }
 
 func inferAttackChainSeed(project domain.Project, finding domain.Finding) string {

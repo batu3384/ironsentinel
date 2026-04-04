@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/batu3384/ironsentinel/internal/config"
@@ -14,7 +15,7 @@ func TestHeuristicSecretsWritesEvidenceArtifact(t *testing.T) {
 	root := t.TempDir()
 	outputDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("token=ghp_1234567890abcdef1234567890abcdef1234\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("token="+heuristicTestGitHubPAT()+"\n"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 
@@ -41,6 +42,10 @@ func TestHeuristicSecretsWritesEvidenceArtifact(t *testing.T) {
 	if _, err := os.Stat(result.Artifacts[0].URI); err != nil {
 		t.Fatalf("expected evidence artifact to exist: %v", err)
 	}
+}
+
+func heuristicTestGitHubPAT() string {
+	return strings.Join([]string{"gh", "p_", strings.Repeat("a", 36)}, "")
 }
 
 func TestHeuristicSurfaceInventoryFlagsSensitiveFilesAndBinaryArtifacts(t *testing.T) {

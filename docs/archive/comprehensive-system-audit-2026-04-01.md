@@ -1,5 +1,7 @@
 # Comprehensive System Audit
 
+> Historical snapshot from April 1, 2026. Keep for audit history only; do not treat it as the current architecture source of truth.
+
 - Target: `/Users/batuhanyuksel/Documents/security`
 - Date: `2026-04-01`
 - Scope: CLI/TUI UX, non-interactive output contracts, runtime doctor, scan orchestration, self-scan, export/reporting, release scripts

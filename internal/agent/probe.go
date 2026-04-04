@@ -7,10 +7,21 @@ import (
 	"time"
 )
 
-const runtimeProbeTimeout = 2500 * time.Millisecond
+const (
+	runtimeVersionProbeTimeout = 2500 * time.Millisecond
+	runtimeHostProbeTimeout    = 2500 * time.Millisecond
+)
 
-func runProbeCommand(binary string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runtimeProbeTimeout)
+func runVersionProbeCommand(binary string, args ...string) ([]byte, error) {
+	return runProbeCommandWithTimeout(runtimeVersionProbeTimeout, binary, args...)
+}
+
+func runHostProbeCommand(binary string, args ...string) ([]byte, error) {
+	return runProbeCommandWithTimeout(runtimeHostProbeTimeout, binary, args...)
+}
+
+func runProbeCommandWithTimeout(timeout time.Duration, binary string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	command := exec.Command(binary, args...)

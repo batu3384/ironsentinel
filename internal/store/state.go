@@ -23,6 +23,17 @@ type StateStore struct {
 	db   *sql.DB
 }
 
+func (s *StateStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	err := s.db.Close()
+	s.db = nil
+	return err
+}
+
 type schemaMigration struct {
 	version int
 	upSQL   []string
@@ -201,6 +212,63 @@ func (s *StateStore) GetProject(id string) (domain.Project, bool) {
 		return domain.Project{}, false
 	}
 	return project, true
+}
+
+func (s *StateStore) SaveCampaign(campaign domain.Campaign) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return upsertCampaign(s.db, campaign)
+}
+
+func (s *StateStore) GetCampaign(id string) (domain.Campaign, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	campaign, err := querySingleJSON[domain.Campaign](s.db, `SELECT payload FROM campaigns WHERE id = ? LIMIT 1`, id)
+	if err != nil {
+		return domain.Campaign{}, false
+	}
+	return campaign, true
+}
+
+func (s *StateStore) UpdateCampaign(id string, mutate func(domain.Campaign) (domain.Campaign, error)) (domain.Campaign, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	campaign, err := querySingleJSON[domain.Campaign](s.db, `SELECT payload FROM campaigns WHERE id = ? LIMIT 1`, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Campaign{}, fmt.Errorf("campaign not found: %s", id)
+		}
+		return domain.Campaign{}, err
+	}
+	updated, err := mutate(campaign)
+	if err != nil {
+		return domain.Campaign{}, err
+	}
+	if err := upsertCampaign(s.db, updated); err != nil {
+		return domain.Campaign{}, err
+	}
+	return updated, nil
+}
+
+func (s *StateStore) ListCampaigns(projectID string) []domain.Campaign {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `SELECT payload FROM campaigns`
+	args := make([]any, 0, 1)
+	if strings.TrimSpace(projectID) != "" {
+		query += ` WHERE project_id = ?`
+		args = append(args, projectID)
+	}
+	query += ` ORDER BY julianday(json_extract(payload, '$.updatedAt')) DESC, julianday(json_extract(payload, '$.createdAt')) DESC`
+
+	items, err := queryJSONList[domain.Campaign](s.db, query, args...)
+	if err != nil {
+		return nil
+	}
+	return items
 }
 
 func (s *StateStore) CreateRun(run domain.ScanRun) error {
@@ -448,12 +516,39 @@ func applyTriage(finding domain.Finding, triage map[string]domain.FindingTriage)
 		return finding
 	}
 	finding.Status = item.Status
-	finding.Tags = append([]string(nil), item.Tags...)
+	finding.Tags = mergeFindingTags(finding.Tags, item.Tags)
 	finding.Note = item.Note
 	finding.Owner = item.Owner
 	updatedAt := item.UpdatedAt
 	finding.UpdatedAt = &updatedAt
 	return finding
+}
+
+func mergeFindingTags(existing, triageTags []string) []string {
+	if len(existing) == 0 && len(triageTags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(existing)+len(triageTags))
+	merged := make([]string, 0, len(existing)+len(triageTags))
+	appendTag := func(tag string) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return
+		}
+		key := strings.ToLower(tag)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, tag)
+	}
+	for _, tag := range existing {
+		appendTag(tag)
+	}
+	for _, tag := range triageTags {
+		appendTag(tag)
+	}
+	return merged
 }
 
 type sqlQueryer interface {
@@ -515,6 +610,25 @@ func upsertProject(exec sqlExecutor, project domain.Project) error {
 		project.TargetHandle,
 		project.DisplayName,
 		project.CreatedAt.UTC().Format(time.RFC3339Nano),
+		string(payload),
+	)
+	return err
+}
+
+func upsertCampaign(exec sqlExecutor, campaign domain.Campaign) error {
+	payload, err := json.Marshal(campaign)
+	if err != nil {
+		return err
+	}
+
+	_, err = exec.Exec(
+		`INSERT INTO campaigns (id, project_id, payload)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+		   project_id = excluded.project_id,
+		   payload = excluded.payload`,
+		campaign.ID,
+		campaign.ProjectID,
 		string(payload),
 	)
 	return err
@@ -620,6 +734,11 @@ var schemaMigrations = []schemaMigration{
 		upSQL:   []string{schemaIndexesSQL},
 		downSQL: []string{schemaDropIndexesSQL},
 	},
+	{
+		version: 3,
+		upSQL:   []string{schemaCampaignsSQL, schemaCampaignIndexesSQL},
+		downSQL: []string{schemaCampaignDropIndexesSQL, schemaCampaignDropTablesSQL},
+	},
 }
 
 const schemaTablesSQL = `
@@ -661,12 +780,24 @@ CREATE TABLE IF NOT EXISTS triage (
 );
 `
 
+const schemaCampaignsSQL = `
+CREATE TABLE IF NOT EXISTS campaigns (
+	id TEXT PRIMARY KEY,
+	project_id TEXT NOT NULL,
+	payload TEXT NOT NULL
+);
+`
+
 const schemaIndexesSQL = `
 CREATE INDEX IF NOT EXISTS idx_runs_project_started_at ON runs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_findings_scan_id ON findings(scan_id);
 CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
 CREATE INDEX IF NOT EXISTS idx_suppressions_expires_at ON suppressions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_triage_updated_at ON triage(updated_at DESC);
+`
+
+const schemaCampaignIndexesSQL = `
+CREATE INDEX IF NOT EXISTS idx_campaigns_project_id ON campaigns(project_id);
 `
 
 const schemaDropIndexesSQL = `
@@ -683,4 +814,13 @@ DROP TABLE IF EXISTS suppressions;
 DROP TABLE IF EXISTS findings;
 DROP TABLE IF EXISTS runs;
 DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS campaigns;
+`
+
+const schemaCampaignDropIndexesSQL = `
+DROP INDEX IF EXISTS idx_campaigns_project_id;
+`
+
+const schemaCampaignDropTablesSQL = `
+DROP TABLE IF EXISTS campaigns;
 `
