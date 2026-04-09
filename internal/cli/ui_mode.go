@@ -75,6 +75,13 @@ func (a *App) tuiTheme() tuiTheme {
 	return newTUITheme(a.currentUIMode())
 }
 
+func (a *App) decorativeMotionEnabled() bool {
+	if a == nil {
+		return false
+	}
+	return !a.tuiTheme().plain() && !a.reducedMotion()
+}
+
 func (t tuiTheme) plain() bool {
 	return t.mode == uiModePlain
 }

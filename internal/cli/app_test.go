@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 
@@ -602,6 +603,67 @@ func TestRootCommandIncludesSimpleProjectSelectionCommands(t *testing.T) {
 	}
 }
 
+func TestRootCommandNoArgsInteractiveUsesPrimaryConsoleShell(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.languageConfigured = true
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	originalRunTeaProgram := runTeaProgram
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+		runTeaProgram = originalRunTeaProgram
+	})
+	terminalIsTerminal = func(int) bool { return true }
+
+	var calls []tea.Model
+	runTeaProgram = func(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+		calls = append(calls, model)
+		return model, nil
+	}
+
+	root := app.RootCommand()
+	root.SetArgs([]string{})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute root command: %v", err)
+	}
+	if got := app.primaryTUIModelName(); got != "console_shell" {
+		t.Fatalf("expected primary TUI model name console_shell, got %q", got)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected root command to boot a single primary model, got %d call(s)", len(calls))
+	}
+	if _, ok := calls[0].(consoleShellModel); !ok {
+		t.Fatalf("expected root command to boot console shell, got %T", calls[0])
+	}
+}
+
+func TestRootCommandNoArgsNonInteractiveFallsBackToPlainOverview(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.languageConfigured = true
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	originalRunTeaProgram := runTeaProgram
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+		runTeaProgram = originalRunTeaProgram
+	})
+	terminalIsTerminal = func(int) bool { return false }
+
+	runTeaProgram = func(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+		t.Fatalf("expected non-interactive root path to avoid TUI launch, got %T", model)
+		return model, nil
+	}
+
+	root := app.RootCommand()
+	root.SetArgs([]string{})
+	output := captureCLIStdout(t, func() error {
+		return root.Execute()
+	})
+	if !strings.Contains(output, strings.ToUpper(brandProductName)+" overview") {
+		t.Fatalf("expected plain overview output, got %q", output)
+	}
+}
+
 func TestGitHubUploadSARIFCommandRequiresToken(t *testing.T) {
 	app, run, _, _ := newFocusedRunFilterFixture(t)
 	t.Setenv("GITHUB_TOKEN", "")
@@ -1102,6 +1164,114 @@ func TestRootCommandCompatibilityCommandsAreHiddenButCallable(t *testing.T) {
 		if strings.TrimSpace(command.Deprecated) == "" {
 			t.Fatalf("expected compatibility command %s to advertise a migration hint", use)
 		}
+	}
+}
+
+func TestCompatibilityCommandsRequireInteractiveSurface(t *testing.T) {
+	app := &App{
+		lang:               i18n.EN,
+		catalog:            i18n.New(i18n.EN),
+		languageConfigured: true,
+	}
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+	})
+	terminalIsTerminal = func(int) bool { return false }
+
+	for _, command := range []*cobra.Command{app.tuiCommand(), app.consoleCommand()} {
+		command.SetOut(io.Discard)
+		command.SetErr(io.Discard)
+		command.SetArgs([]string{})
+		if err := command.Execute(); err == nil || !strings.Contains(err.Error(), app.catalog.T("interactive_required")) {
+			t.Fatalf("expected %s to require an interactive surface, got %v", command.Use, err)
+		}
+	}
+}
+
+func TestCompatibilityCommandsUsePrimaryConsoleShellWhenInteractive(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.languageConfigured = true
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	originalRunTeaProgram := runTeaProgram
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+		runTeaProgram = originalRunTeaProgram
+	})
+	terminalIsTerminal = func(int) bool { return true }
+
+	for _, command := range []*cobra.Command{app.tuiCommand(), app.consoleCommand()} {
+		var calls []tea.Model
+		runTeaProgram = func(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+			calls = append(calls, model)
+			return model, nil
+		}
+
+		command.SetOut(io.Discard)
+		command.SetErr(io.Discard)
+		command.SetArgs([]string{})
+		if err := command.Execute(); err != nil {
+			t.Fatalf("execute %s: %v", command.Use, err)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("expected %s to boot a single primary model, got %d call(s)", command.Use, len(calls))
+		}
+		if _, ok := calls[0].(consoleShellModel); !ok {
+			t.Fatalf("expected %s to boot console shell, got %T", command.Use, calls[0])
+		}
+		if _, ok := calls[0].(appShellModel); ok {
+			t.Fatalf("expected %s to avoid legacy route shell", command.Use)
+		}
+	}
+}
+
+func TestInteractiveScanCommandUsesLegacyCompatibilityShellState(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.languageConfigured = true
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	originalRunTeaProgram := runTeaProgram
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+		runTeaProgram = originalRunTeaProgram
+	})
+	terminalIsTerminal = func(int) bool { return true }
+
+	var calls []tea.Model
+	runTeaProgram = func(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+		calls = append(calls, model)
+		return model, nil
+	}
+
+	cmd := app.scanCommand()
+	cmd.SetArgs([]string{
+		project.LocationHint,
+		"--mode", "active",
+		"--dast-target", "staging=https://example.test",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute scan command: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected interactive scan to boot a single legacy compatibility shell, got %d call(s)", len(calls))
+	}
+	legacy, ok := calls[0].(appShellModel)
+	if !ok {
+		t.Fatalf("expected interactive scan to route through launchTUIWithState legacy shell, got %T", calls[0])
+	}
+	if legacy.route != appRouteScanReview {
+		t.Fatalf("expected interactive scan to seed scan review route, got %v", legacy.route)
+	}
+	if legacy.selectedProjectID != project.ID {
+		t.Fatalf("expected interactive scan to seed selected project %s, got %s", project.ID, legacy.selectedProjectID)
+	}
+	if !legacy.review.ActiveValidation {
+		t.Fatalf("expected interactive scan to seed active validation review state")
+	}
+	if len(legacy.reviewDASTTargets) != 1 || legacy.reviewDASTTargets[0].Name != "staging" || legacy.reviewDASTTargets[0].URL != "https://example.test" {
+		t.Fatalf("expected interactive scan to seed DAST target list, got %+v", legacy.reviewDASTTargets)
 	}
 }
 

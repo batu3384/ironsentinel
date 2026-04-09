@@ -46,31 +46,33 @@ type scanMissionDoneMsg struct {
 type scanMissionTickMsg time.Time
 
 type scanMissionModel struct {
-	app            *App
-	project        domain.Project
-	profile        domain.ScanProfile
-	historicalRuns []domain.ScanRun
-	doctor         domain.RuntimeDoctor
-	projectTree    []string
-	launchedAt     time.Time
-	cpuBaseline    float64
-	console        *liveScanConsole
-	width          int
-	height         int
-	detailScroll   int
-	done           bool
-	aborting       bool
-	notice         string
-	alert          bool
-	run            domain.ScanRun
-	findings       []domain.Finding
-	scanErr        error
-	requiredErr    error
-	action         scanMissionAction
-	cancel         context.CancelFunc
-	eventCh        <-chan domain.StreamEvent
-	doneCh         <-chan scanMissionDoneMsg
-	seq            int
+	app              *App
+	project          domain.Project
+	profile          domain.ScanProfile
+	historicalRuns   []domain.ScanRun
+	doctor           domain.RuntimeDoctor
+	projectTree      []string
+	launchedAt       time.Time
+	cpuBaseline      float64
+	console          *liveScanConsole
+	width            int
+	height           int
+	detailScroll     int
+	done             bool
+	aborting         bool
+	notice           string
+	alert            bool
+	run              domain.ScanRun
+	findings         []domain.Finding
+	scanErr          error
+	requiredErr      error
+	action           scanMissionAction
+	cancel           context.CancelFunc
+	eventCh          <-chan domain.StreamEvent
+	doneCh           <-chan scanMissionDoneMsg
+	seq              int
+	missionOnly      bool
+	statusOnlyMotion bool
 }
 
 func (a *App) runFullscreenScanMode(ctx context.Context, project domain.Project, profile domain.ScanProfile) (scanMissionOutcome, error) {
@@ -245,10 +247,15 @@ func (m scanMissionModel) View() string {
 	contentWidth := m.missionContentWidth()
 
 	frame := 0
-	if m.console != nil {
+	if m.console != nil && !m.statusOnlyMotion {
 		frame = m.console.frame
 	}
-	headerLines := []string{m.app.renderBrandConsoleHeaderForRoute(contentWidth, frame, m.subtitle(), appRouteLiveScan)}
+	headerLines := []string{}
+	if m.statusOnlyMotion {
+		headerLines = append(headerLines, m.app.renderBrandConsoleMissionHeader(contentWidth, m.subtitle()))
+	} else {
+		headerLines = append(headerLines, m.app.renderBrandConsoleHeaderForRoute(contentWidth, frame, m.subtitle(), appRouteLiveScan))
+	}
 	launchStrip := m.renderLaunchStrip(contentWidth)
 	healthPanel := m.renderHealthFooter(contentWidth)
 
@@ -294,12 +301,15 @@ func (m scanMissionModel) renderLaunchStrip(width int) string {
 	if posture == "" {
 		posture = strings.ToUpper(m.app.catalog.T("scan_mc_status_booting"))
 	}
-	activeLane := m.app.catalog.T("scan_phase_general")
+	activePhase := m.app.catalog.T("scan_phase_general")
 	activeModule := "-"
 	if m.console != nil {
-		activeLane = defaultString(m.console.lastPhase, m.app.catalog.T("scan_phase_general"))
+		activePhase = defaultString(m.console.lastPhase, m.app.catalog.T("scan_phase_general"))
 		activeModule = defaultString(m.console.lastModule, "-")
 	}
+	activeTool := m.missionActiveTool()
+	status := m.missionStatusText()
+	recentEvent := trimForSelect(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting")), maxInt(24, width-24))
 	isolation := strings.ToUpper(string(m.profile.Isolation))
 	if isolation == "" {
 		isolation = strings.ToUpper(string(domain.IsolationAuto))
@@ -319,15 +329,20 @@ func (m scanMissionModel) renderLaunchStrip(width int) string {
 	))
 	title := strings.ToUpper(activeModule)
 	if strings.TrimSpace(title) == "" || title == "-" {
-		title = posture
+		title = status
 	}
-	body := fmt.Sprintf("%s • %s • %d/%d", trimForSelect(activeLane, 24), risk, done, total)
+	body := fmt.Sprintf("%s • %s • %d/%d", trimForSelect(activePhase, 24), risk, done, total)
 	lines := renderFactRows(m.app.tuiTheme(), width,
+		factPair{Label: m.app.catalog.T("status"), Value: status},
 		factPair{Label: m.app.catalog.T("app_label_target"), Value: trimForSelect(m.project.LocationHint, maxInt(24, width-22))},
+		factPair{Label: m.app.phaseLabel(), Value: trimForSelect(activePhase, maxInt(24, width-22))},
+		factPair{Label: m.app.catalog.T("app_label_module"), Value: strings.ToUpper(activeModule)},
+		factPair{Label: m.app.toolLabel(), Value: activeTool},
+		factPair{Label: m.app.catalog.T("scan_mc_activity"), Value: recentEvent},
 		factPair{Label: m.app.catalog.T("app_label_health"), Value: fmt.Sprintf("%s • %s • %s", preflight, strings.ToUpper(isolation), posture)},
 		factPair{Label: m.app.catalog.T("app_label_findings"), Value: fmt.Sprintf("%d • %s %d • %s %s", run.Summary.TotalFindings, strings.ToLower(m.app.catalog.T("module_retried_count")), retried, strings.ToLower(m.app.catalog.T("scan_launch_clock")), elapsed.String())},
 	)
-	return m.renderMissionHeroPanel(width, m.app.catalog.T("app_route_live_scan"), title, body, lines...)
+	return m.renderMissionHeroPanel(width, status, title, body, lines...)
 }
 
 func (m *scanMissionModel) setNotice(text string, alert bool) {
@@ -346,10 +361,36 @@ func (m scanMissionModel) recommendedAction() scanMissionAction {
 }
 
 func (m scanMissionModel) subtitle() string {
+	if m.missionOnly {
+		return m.app.consoleMissionSubtitle(m.done)
+	}
 	if m.done {
 		return m.app.catalog.T("scan_mode_live_subtitle_done")
 	}
 	return m.app.catalog.T("scan_mode_live_subtitle_running")
+}
+
+func (m scanMissionModel) missionStatusText() string {
+	switch {
+	case m.aborting && !m.done:
+		return strings.ToUpper(string(domain.ScanCanceled))
+	case m.done:
+		return strings.ToUpper(string(m.consoleRun().Status))
+	default:
+		return strings.ToUpper(string(domain.ScanRunning))
+	}
+}
+
+func (m scanMissionModel) missionActiveTool() string {
+	if m.console != nil {
+		if tool := strings.TrimSpace(m.console.lastTool); tool != "" {
+			return strings.ToUpper(tool)
+		}
+		if module := strings.TrimSpace(m.console.lastModule); module != "" {
+			return strings.ToUpper(m.app.moduleToolLabel(module))
+		}
+	}
+	return strings.ToUpper(m.app.moduleToolLabel(""))
 }
 
 func (m scanMissionModel) doneNotice() string {
@@ -364,6 +405,9 @@ func (m scanMissionModel) doneNotice() string {
 }
 
 func (m scanMissionModel) footerText() string {
+	if m.missionOnly {
+		return m.app.consoleMissionFooter(m.done, m.aborting)
+	}
 	scrollHint := m.app.catalog.T("app_help_scroll_hint")
 	switch {
 	case !m.done && m.aborting:
@@ -540,7 +584,13 @@ func (m scanMissionModel) renderMissionCardGrid(cards [][3]string, width int, ma
 
 func (m scanMissionModel) progressCounts() (int, int) {
 	total := max(1, m.app.moduleCount(m.profile.Modules))
-	done := len(m.consoleRun().ModuleResults)
+	done := 0
+	for _, module := range m.consoleRun().ModuleResults {
+		switch module.Status {
+		case domain.ModuleCompleted, domain.ModuleFailed, domain.ModuleSkipped:
+			done++
+		}
+	}
 	if done > total {
 		done = total
 	}

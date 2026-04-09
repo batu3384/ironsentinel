@@ -267,11 +267,27 @@ func (a *App) renderBrandConsoleHeaderForRoute(width, frame int, subtitle string
 	return lipgloss.JoinHorizontal(lipgloss.Top, mascot, "  ", content)
 }
 
+func (a *App) renderBrandConsoleMissionHeader(width int, subtitle string) string {
+	if width <= 0 {
+		width = 120
+	}
+	theme := a.tuiTheme()
+	title := strings.ToUpper(brandProductName)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(theme.heroTitleStyle().Bold(true).Render(title)),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(theme.subtitleStyle().Render(trimForSelect(subtitle, maxInt(18, width-4)))),
+	)
+}
+
 func (a *App) renderStaticBrandHero(subtitle string) string {
 	return a.renderBrandHero(a.staticRenderWidth()-4, 0, subtitle)
 }
 
 func (a *App) renderBrandBannerLines(frame int) []string {
+	if !a.decorativeMotionEnabled() {
+		frame = 0
+	}
 	if a.tuiTheme().plain() {
 		return composeBrandBanner(brandProductName)
 	}
@@ -360,7 +376,7 @@ func (a *App) mascotFrame(route appRoute, frame int) []string {
 	if len(profile.frames) == 0 {
 		return []string{profile.title}
 	}
-	if a.reducedMotion() {
+	if !a.decorativeMotionEnabled() {
 		return profile.frames[0]
 	}
 	return profile.frames[frame%len(profile.frames)]
@@ -396,6 +412,9 @@ func (a *App) brandSignalLine(frame int) string {
 			a.catalog.T("brand_signal_trust"),
 			a.catalog.T("brand_signal_evidence"),
 		}, " | ")
+	}
+	if !a.decorativeMotionEnabled() {
+		frame = 0
 	}
 	signals := []struct {
 		label string

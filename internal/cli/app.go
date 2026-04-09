@@ -185,6 +185,15 @@ func commandContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+var terminalIsTerminal = term.IsTerminal
+
+func initialInteractiveLaunchRoute(picker bool) appRoute {
+	if picker {
+		return appRouteHome
+	}
+	return appRouteScanReview
+}
+
 func (a *App) SetLanguage(language string) error {
 	if language == "" {
 		return nil
@@ -1129,13 +1138,13 @@ func (a *App) scanCommand() *cobra.Command {
 				}
 
 				state := appShellLaunchState{
-					Route:              appRouteScanReview,
+					Route:              initialInteractiveLaunchRoute(false),
 					Review:             review,
 					ReviewDASTTargets:  append([]domain.DastTarget(nil), targets...),
 					ReviewAuthProfiles: append([]domain.DastAuthProfile(nil), authProfiles...),
 				}
 				if picker {
-					state.Route = appRouteProjects
+					state.Route = initialInteractiveLaunchRoute(true)
 					state.Notice = a.catalog.T("app_projects_pick_hint")
 					return a.launchTUIWithState(cmd.Context(), state)
 				}
@@ -3117,12 +3126,14 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 		a.renderMissionDebrief(project, run, findings, requiredErr)
 	} else {
 		a.renderRunSummary(run, &project, findings)
-		a.renderModules(run.ModuleResults)
-		a.renderFindings(findings)
-		a.renderScanOutcome(run, findings, requiredErr)
-		a.renderScanPhaseVerdicts(run)
-		a.renderFindingSpotlight(findings, 3)
-		a.renderAnalystHandoff(run, findings, requiredErr)
+		if !a.shellSafeSurfaceOutput() {
+			a.renderModules(run.ModuleResults)
+			a.renderFindings(findings)
+			a.renderScanOutcome(run, findings, requiredErr)
+			a.renderScanPhaseVerdicts(run)
+			a.renderFindingSpotlight(findings, 3)
+			a.renderAnalystHandoff(run, findings, requiredErr)
+		}
 	}
 	if requiredErr != nil {
 		if err := a.handlePostScanFollowUp(run, findings, requiredErr); err != nil {
@@ -3732,7 +3743,7 @@ func (a *App) promptConfirm(prompt string, defaultValue bool) (bool, error) {
 }
 
 func (a *App) isInteractiveTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+	return terminalIsTerminal(int(os.Stdin.Fd())) && terminalIsTerminal(int(os.Stdout.Fd()))
 }
 
 func (a *App) shellSafeSurfaceOutput() bool {

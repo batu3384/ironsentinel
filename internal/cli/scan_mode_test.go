@@ -79,6 +79,58 @@ func TestScanMissionModelRunningQRequestsCancel(t *testing.T) {
 	}
 }
 
+func TestScanMissionModelSharedDoneFooterStillOffersFollowUpActions(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	model := scanMissionModel{
+		app:  app,
+		done: true,
+		findings: []domain.Finding{
+			{Fingerprint: "fp-1", Severity: domain.SeverityHigh, Title: "Leaked key"},
+		},
+	}
+
+	footer := model.footerText()
+	if !strings.Contains(footer, app.catalog.T("scan_mode_live_footer_review")) {
+		t.Fatalf("expected shared live-scan footer to preserve review affordance, got %q", footer)
+	}
+}
+
+func TestScanMissionModelSharedTickStillAnimates(t *testing.T) {
+	t.Setenv("CI", "")
+	t.Setenv("IRONSENTINEL_REDUCED_MOTION", "")
+	t.Setenv("AEGIS_REDUCED_MOTION", "")
+	t.Setenv("TERM", "xterm-256color")
+
+	app, project := newTestTUIApp(t)
+	model := scanMissionModel{
+		app: app,
+		console: &liveScanConsole{
+			project: project,
+			profile: domain.ScanProfile{Modules: []string{"semgrep"}},
+			frame:   2,
+			run: domain.ScanRun{
+				Status: domain.ScanRunning,
+				ModuleResults: []domain.ModuleResult{
+					{Name: "semgrep", Status: domain.ModuleRunning},
+				},
+			},
+		},
+	}
+
+	updated, cmd := model.Update(scanMissionTickMsg(time.Unix(1_763_000_100, 0)))
+	next := updated.(scanMissionModel)
+	if next.console.frame != 3 {
+		t.Fatalf("expected shared live-scan tick to advance frame, got %d", next.console.frame)
+	}
+	if cmd == nil {
+		t.Fatalf("expected shared live-scan tick to reschedule")
+	}
+	msg := cmd()
+	if _, ok := msg.(scanMissionTickMsg); !ok {
+		t.Fatalf("expected shared live-scan tick command to emit scanMissionTickMsg, got %T", msg)
+	}
+}
+
 func TestScanMissionModelScrollKeysAdjustDetailViewport(t *testing.T) {
 	app, _ := newTestTUIApp(t)
 	model := scanMissionModel{

@@ -135,7 +135,7 @@ func (m appShellModel) renderAppBody(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-func appShellPrimaryRoutes() []appRoute {
+func appShellCompatibilityRoutes() []appRoute {
 	return []appRoute{
 		appRouteHome,
 		appRouteScanReview,
@@ -146,8 +146,8 @@ func appShellPrimaryRoutes() []appRoute {
 	}
 }
 
-func (m appShellModel) nextPrimaryRoute(delta int) appRoute {
-	routes := appShellPrimaryRoutes()
+func (m appShellModel) nextCompatibilityRoute(delta int) appRoute {
+	routes := appShellCompatibilityRoutes()
 	index := slices.Index(routes, m.route)
 	if index < 0 {
 		if m.route == appRouteProjects {

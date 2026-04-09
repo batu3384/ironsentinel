@@ -4,9 +4,10 @@
 
 IronSentinel has one primary operator workflow:
 
-1. `ironsentinel` with no arguments opens the fullscreen command center in an interactive terminal.
-2. Non-interactive surfaces such as `overview`, `runtime`, and `export` stay shell-safe and automation-friendly.
-3. Compatibility commands (`console`, `open`, `pick`, `tui`) remain callable during migration, but they are hidden from primary help and redirect operators toward the canonical flow.
+1. `ironsentinel` with no arguments opens the single-console operator surface in an interactive terminal.
+2. That primary surface keeps one continuous `Launch -> Mission -> Debrief` progression, with drawers for findings, runtime, and run evidence instead of separate first-class route hopping.
+3. Non-interactive surfaces such as `overview`, `runtime`, and `export` stay shell-safe and automation-friendly.
+4. Compatibility commands (`console`, `open`, `pick`, `tui`) remain callable during migration, but they are hidden from primary help and redirect operators toward the canonical flow.
 
 This keeps the user-facing model simple:
 
@@ -52,25 +53,28 @@ Supporting commands:
 
 ### Fullscreen command center
 
+Implemented primarily in `internal/cli/console_shell.go`, `internal/cli/console_shell_view.go`, and the mission/debrief helpers.
+
+Primary stages:
+
+- `Launch`
+- `Mission`
+- `Debrief`
+
+Single-console rules:
+
+- `Launch` owns project confirmation and readiness framing.
+- `Mission` keeps live execution, telemetry, and risk on the same surface.
+- `Debrief` keeps the evidence summary on the same surface and opens findings/runtime/run drawers instead of switching the operator into a new top-level mode.
+- `NO_COLOR=1` and `ui-mode plain` align the fallback output to the same `Launch -> Mission -> Debrief` hierarchy.
+- `IRONSENTINEL_REDUCED_MOTION=1` disables decorative motion, and plain mode must not leak any decorative frame-based animation.
+- Non-TTY execution never depends on the fullscreen surface.
+
+### Compatibility shell
+
 Implemented in `internal/cli/app_shell.go` and companion route files/helpers.
 
-Primary routes:
-
-- `Home`
-- `Scan Review`
-- `Live Scan`
-- `Runs`
-- `Findings`
-- `Runtime`
-
-Route rules:
-
-- `Home` is the only hero-heavy surface.
-- Operational routes use compact chrome and master-detail structure.
-- Async route/detail loaders must reject stale responses.
-- `NO_COLOR=1` forces plain output.
-- `IRONSENTINEL_REDUCED_MOTION=1` disables decorative motion.
-- Non-TTY execution never depends on the fullscreen surface.
+This route-first shell is retained only for explicit compatibility flows and migration support. It is not the primary product contract and should not drive new documentation or operator mental models.
 
 ### Shell-safe reports
 
@@ -81,6 +85,8 @@ These are the durable automation/reporting surfaces for:
 - `overview`
 - `runtime`
 - machine-readable exports
+
+The plain human-readable reports mirror the same `Launch -> Mission -> Debrief` hierarchy so operators get one mental model across interactive and non-interactive contexts.
 
 ### GitHub integration
 
@@ -186,7 +192,7 @@ flowchart LR
   T --> E
   A --> E
   E --> X["HTML / SARIF / CSV Export"]
-  E --> U["TUI Debrief / Runs / Findings"]
+  E --> U["Single-console Debrief / Drawers"]
 ```
 
 ## Runtime Trust Model

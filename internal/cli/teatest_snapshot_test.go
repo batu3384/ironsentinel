@@ -92,28 +92,32 @@ func TestScanMissionSnapshot(t *testing.T) {
 	}
 }
 
-func TestAppShellHomeSnapshot(t *testing.T) {
+func TestConsoleShellLaunchSnapshot(t *testing.T) {
 	app, project := newTestTUIApp(t)
 	app.uiMode = uiModeStandard
 
-	model := newAppShellModel(app, appShellLaunchState{
-		Route:             appRouteHome,
+	model := newConsoleShellModel(app, consoleShellLaunchState{
 		SelectedProjectID: project.ID,
-		Review:            defaultScanReviewState(app.cfg.SandboxMode),
-	})
+	}, nil)
 	model.width = 160
 	model.height = 46
-	model.frame = 4
 
 	out := []byte(model.View())
 	if !containsAll(out,
-		"IRONSENTINEL",
-		"Launchpad",
-		"Mission focus",
-		app.catalog.T("app_label_workspace"),
+		app.catalog.T("console_title"),
+		app.catalog.T("console_launch_subtitle"),
+		app.catalog.T("console_launch_target_label"),
 		project.DisplayName,
 	) {
-		t.Fatalf("app shell home snapshot is missing expected sections")
+		t.Fatalf("console shell launch snapshot is missing expected sections")
+	}
+	for _, fragment := range []string{
+		app.catalog.T("app_route_home"),
+		app.catalog.T("console_launch_advanced_hint"),
+	} {
+		if strings.Contains(string(out), fragment) {
+			t.Fatalf("console shell launch snapshot should not restore route-first launch copy %q", fragment)
+		}
 	}
 }
 
@@ -142,7 +146,7 @@ func TestAppShellScanReviewSnapshot(t *testing.T) {
 	}
 }
 
-func TestAppShellTurkishHomeSnapshot(t *testing.T) {
+func TestLegacyAppShellTurkishHomeSnapshot(t *testing.T) {
 	app, project := newTestTUIApp(t)
 	app.uiMode = uiModeStandard
 	app.lang = i18n.TR

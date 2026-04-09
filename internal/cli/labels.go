@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -10,6 +11,83 @@ import (
 	"github.com/batu3384/ironsentinel/internal/domain"
 	"github.com/batu3384/ironsentinel/internal/i18n"
 )
+
+func (a *App) phaseLabel() string {
+	if a.lang == i18n.TR {
+		return "Asama"
+	}
+	return "Phase"
+}
+
+func (a *App) toolLabel() string {
+	if a.lang == i18n.TR {
+		return "Arac"
+	}
+	return "Tool"
+}
+
+func (a *App) consoleMissionSubtitle(done bool) string {
+	if done {
+		if a.lang == i18n.TR {
+			return "Gorev tamamlandi. Bu yuzey yalnizca gorev durumu ve kanit ozetini gosteriyor."
+		}
+		return "Mission complete. This surface remains focused on mission status and evidence summary."
+	}
+	if a.lang == i18n.TR {
+		return "Canli tarama durumu, risk ve bulgular bu yuzeyde akiyor."
+	}
+	return "Live scan status, risk, and findings are flowing on this surface."
+}
+
+func (a *App) consoleMissionDoneNotice(status domain.ScanStatus, requiredErr error, findingCount int) string {
+	switch {
+	case status == domain.ScanFailed:
+		if a.lang == i18n.TR {
+			return "Gorev basarisiz sonlandi. Kanit ozeti bu yuzeyde korunuyor."
+		}
+		return "Mission failed. Evidence summary remains on this surface."
+	case status == domain.ScanCanceled:
+		if a.lang == i18n.TR {
+			return "Gorev iptal edildi. Toplanan kanit ozeti bu yuzeyde korunuyor."
+		}
+		return "Mission canceled. Collected evidence summary remains on this surface."
+	case requiredErr != nil:
+		if a.lang == i18n.TR {
+			return "Gorev tamamlandi. Zorunlu kapsama kontrolleri eksik oldugu icin kosu kismi kabul edilmeli."
+		}
+		return "Mission complete. Required coverage checks were incomplete, so treat this run as partial."
+	case findingCount > 0:
+		if a.lang == i18n.TR {
+			return "Gorev tamamlandi. Bulgular ve kanit ozeti bu yuzeyde korunuyor."
+		}
+		return "Mission complete. Findings and evidence summary remain on this surface."
+	default:
+		if a.lang == i18n.TR {
+			return "Gorev tamamlandi. Bu kosuda dogrulanmis bulgu uretilmedi."
+		}
+		return "Mission complete. No confirmed findings were raised in this run."
+	}
+}
+
+func (a *App) consoleMissionFooter(done, aborting bool) string {
+	switch {
+	case !done && aborting:
+		if a.lang == i18n.TR {
+			return "iptal gonderildi, ajan temiz bicimde durduruluyor"
+		}
+		return "cancel requested, waiting for the agent to stop cleanly"
+	case !done:
+		if a.lang == i18n.TR {
+			return "q iptal istegi gonder"
+		}
+		return "q request cancel"
+	default:
+		if a.lang == i18n.TR {
+			return "q gorevi kapat"
+		}
+		return "q close mission"
+	}
+}
 
 func (a *App) languageLabel(language i18n.Language) string {
 	switch language {
@@ -431,6 +509,39 @@ func (a *App) moduleNarrative(module string) string {
 	default:
 		return module
 	}
+}
+
+func (a *App) moduleToolLabel(module string) string {
+	switch strings.TrimSpace(module) {
+	case "", "-":
+		return "-"
+	case "stack-detector", "surface-inventory", "script-audit", "dependency-confusion", "runtime-config-audit", "binary-entropy", "secret-heuristics", "malware-signature":
+		if a.lang == i18n.TR {
+			return "yerlesik analiz"
+		}
+		return "built-in analyzer"
+	case "trivy-image":
+		return "trivy"
+	case "yara-x":
+		return "yara"
+	default:
+		return module
+	}
+}
+
+func (a *App) executionToolLabel(trace *domain.ModuleExecutionTrace, attempt *domain.ModuleAttemptTrace) string {
+	if attempt != nil {
+		if len(attempt.Args) > 0 && strings.TrimSpace(attempt.Args[0]) != "" {
+			return filepath.Base(strings.TrimSpace(attempt.Args[0]))
+		}
+		if command := strings.TrimSpace(attempt.Command); command != "" {
+			return filepath.Base(strings.Fields(command)[0])
+		}
+	}
+	if trace != nil {
+		return a.moduleToolLabel(trace.Module)
+	}
+	return "-"
 }
 
 func (a *App) modulePhaseLabel(module string) string {

@@ -218,6 +218,7 @@ func (m scanMissionModel) renderMissionExecutionPanel(width int) string {
 	queued, running, completed, failed, _ := m.app.moduleStatusCounts(run.ModuleResults)
 	lines := []string{
 		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mc_activity"), trimForSelect(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting")), max(18, width-18))),
+		fmt.Sprintf("%s: %s", m.app.toolLabel(), m.missionActiveTool()),
 		fmt.Sprintf("%s: %d/%d • %s %d • %s %d • %s %d • %s %d", m.app.catalog.T("scan_scope_modules"), done, total, strings.ToLower(m.app.catalog.T("module_running_count")), running, strings.ToLower(m.app.catalog.T("module_queued_count")), queued, strings.ToLower(m.app.catalog.T("module_completed_count")), completed, strings.ToLower(m.app.catalog.T("module_failed_count")), failed),
 		"",
 	}
@@ -324,6 +325,21 @@ func (m scanMissionModel) moduleFlowRows(width int) []string {
 	if width < 56 {
 		nameWidth = 12
 	}
+	if m.statusOnlyMotion {
+		statusWidth := 9
+		for _, name := range modules {
+			module, ok := index[name]
+			status := domain.ModuleQueued
+			if ok {
+				status = module.Status
+			}
+			icon := m.moduleStateStatusIcon(status)
+			summaryWidth := max(14, width-nameWidth-statusWidth-8)
+			summary := trimForSelect(m.moduleStateSummary(name, module, status), summaryWidth)
+			lines = append(lines, fmt.Sprintf("%s %-*s %-*s %s", icon, nameWidth, trimForSelect(name, nameWidth), statusWidth, strings.ToUpper(string(status)), summary))
+		}
+		return lines
+	}
 	barWidth := 12
 	if width < 56 {
 		barWidth = 10
@@ -343,6 +359,21 @@ func (m scanMissionModel) moduleFlowRows(width int) []string {
 		lines = append(lines, fmt.Sprintf("%s %-*s %s %s %s", icon, nameWidth, trimForSelect(name, nameWidth), progress, rain, summary))
 	}
 	return lines
+}
+
+func (m scanMissionModel) moduleStateStatusIcon(status domain.ModuleStatus) string {
+	switch status {
+	case domain.ModuleCompleted:
+		return "[✓]"
+	case domain.ModuleFailed:
+		return "[!]"
+	case domain.ModuleSkipped:
+		return "[-]"
+	case domain.ModuleRunning:
+		return "[>]"
+	default:
+		return "[ ]"
+	}
 }
 
 func (m scanMissionModel) moduleStateIcon(status domain.ModuleStatus) string {

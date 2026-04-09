@@ -144,7 +144,7 @@ func (m appShellModel) footerText() string {
 	}
 }
 
-func (m appShellModel) nextLaunchState() appShellLaunchState {
+func (m appShellModel) nextLegacyLaunchState() appShellLaunchState {
 	return appShellLaunchState{
 		Route:              m.route,
 		SelectedProjectID:  m.selectedProjectID,
@@ -166,18 +166,38 @@ func (m appShellModel) selectedProject() (domain.Project, bool) {
 }
 
 func (m appShellModel) preferredProjectID() string {
-	if current, ok := m.selectedProject(); ok {
-		return current.ID
+	return preferredProjectID(m.snapshot.Portfolio.Projects, m.selectedProjectID)
+}
+
+func preferredProjectID(projects []domain.Project, selectedProjectID string) string {
+	selectedProjectID = strings.TrimSpace(selectedProjectID)
+	if selectedProjectID != "" {
+		if project, ok := projectByID(projects, selectedProjectID); ok {
+			return project.ID
+		}
 	}
 	if cwd, err := os.Getwd(); err == nil {
-		if current := projectForPath(m.snapshot.Portfolio.Projects, cwd); current != nil {
+		if current := projectForPath(projects, cwd); current != nil {
 			return current.ID
 		}
 	}
-	if latest := latestProject(m.snapshot.Portfolio.Projects); latest != nil {
+	if latest := latestProject(projects); latest != nil {
 		return latest.ID
 	}
 	return ""
+}
+
+func projectByID(projects []domain.Project, projectID string) (domain.Project, bool) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return domain.Project{}, false
+	}
+	for _, project := range projects {
+		if project.ID == projectID {
+			return project, true
+		}
+	}
+	return domain.Project{}, false
 }
 
 func (m *appShellModel) reconcileSnapshotState(route appRoute) {

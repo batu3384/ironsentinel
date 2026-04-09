@@ -15,18 +15,20 @@
 
 `IronSentinel` is the primary product and `ironsentinel` is the primary binary.
 
-When you run `ironsentinel` in an interactive terminal, it opens the fullscreen command center by default. The platform keeps project history locally, runs guided security missions, normalizes findings into one model, and exports shareable reports without requiring a hosted control plane.
+When you run `ironsentinel` in an interactive terminal, it opens the primary single-console operator surface by default. That surface stays in one continuous `Launch -> Mission -> Debrief` flow, with drawers for findings, runtime trust, and run evidence instead of bouncing operators across separate top-level routes. The platform keeps project history locally, runs guided security missions, normalizes findings into one model, and exports shareable reports without requiring a hosted control plane.
 
 ## Why IronSentinel
 
 - local-first security workflow with data stored under `runtime/data/state.db`
-- fullscreen operator console for launch, review, runtime health, and findings triage
+- fullscreen single-console operator flow for launch, mission execution, debrief, and evidence review
 - built-in heuristic coverage plus external scanner orchestration when trusted tools are available
 - evidence-aware runs with artifacts, execution journals, retry state, and exportable reports
 - bilingual operator experience with `English` and `Turkish`
 - shell-safe fallbacks for `NO_COLOR`, non-interactive output, and reduced motion
 
 ## Product Surfaces
+
+The screenshots below show the primary single-console workflow and its debrief-oriented evidence drawers. Route-based compatibility surfaces still exist for migration, but they are no longer the product model to learn first.
 
 The screenshots below are generated from the real product UI against this repository using a core scan, so the findings queue intentionally shows seeded test fixtures.
 
@@ -45,13 +47,13 @@ The screenshots below are generated from the real product UI against this reposi
    ironsentinel runtime doctor --mode safe --require-integrity
    ```
 
-2. Open the command center.
+2. Open the single-console operator surface.
 
    ```bash
    ironsentinel --lang en
    ```
 
-3. Launch a scan directly from the TUI or from the CLI.
+3. Launch a scan from the single-console launch stage or directly from the CLI.
 
    ```bash
    ironsentinel scan /absolute/path --coverage core
@@ -226,7 +228,7 @@ The fullscreen command center surfaces campaign hints in the run and finding det
 | Publish scan evidence to GitHub | `ironsentinel github upload-sarif <run-id>` / `ironsentinel github submit-deps <project-id>` |
 | Install local push protection | `ironsentinel setup install-pre-push` |
 
-Compatibility commands such as `console`, `open`, `pick`, and `tui` remain callable for migration, but they are hidden from primary help and redirect operators toward the canonical workflow above.
+Compatibility commands such as `console`, `open`, `pick`, and `tui` remain callable for migration, but they are hidden from primary help and redirect operators toward the canonical single-console workflow above.
 
 ## Accessibility And Operator Fallbacks
 

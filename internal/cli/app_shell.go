@@ -52,6 +52,10 @@ const (
 	appShellActionExportReport      appShellAction = "export_report"
 )
 
+var runTeaProgram = func(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+	return tea.NewProgram(model, opts...).Run()
+}
+
 type appShellLaunchState struct {
 	Route              appRoute
 	SelectedProjectID  string
@@ -145,6 +149,8 @@ type appShellModel struct {
 	routeState          map[appRoute]routeViewState
 	reviewContext       reviewContextCacheEntry
 }
+
+// appShellModel is retained as the legacy route-first compatibility surface.
 
 type runDetailCacheEntry struct {
 	delta         domain.RunDelta
@@ -299,18 +305,7 @@ func newAppShellModel(app *App, state appShellLaunchState, ctxs ...context.Conte
 		route = appRouteHome
 	}
 	selected := strings.TrimSpace(state.SelectedProjectID)
-	if selected == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			if current := projectForPath(snapshot.Portfolio.Projects, cwd); current != nil {
-				selected = current.ID
-			}
-		}
-		if selected == "" {
-			if latest := latestProject(snapshot.Portfolio.Projects); latest != nil {
-				selected = latest.ID
-			}
-		}
-	}
+	selected = preferredProjectID(snapshot.Portfolio.Projects, selected)
 	width, height := initialTerminalViewport()
 	model := appShellModel{
 		app:                app,
@@ -363,19 +358,34 @@ func projectForPath(projects []domain.Project, cwd string) *domain.Project {
 	return nil
 }
 
-func (a *App) launchTUI(ctx context.Context) error {
-	return a.launchTUIWithState(ctx, appShellLaunchState{
-		Route:  appRouteHome,
-		Review: defaultScanReviewState(a.cfg.SandboxMode),
-	})
+func (a *App) primaryTUIModelName() string {
+	return "console_shell"
 }
 
+func (a *App) launchPrimaryTUI(ctx context.Context) error {
+	baseCtx, cancel := context.WithCancel(commandContext(ctx))
+	defer cancel()
+	finalModel, err := runTeaProgram(newConsoleShellModel(a, consoleShellLaunchState{}, baseCtx), tea.WithAltScreen())
+	if err != nil {
+		return err
+	}
+	if _, ok := finalModel.(consoleShellModel); !ok {
+		return fmt.Errorf("unexpected console shell model type")
+	}
+	return nil
+}
+
+func (a *App) launchTUI(ctx context.Context) error {
+	return a.launchPrimaryTUI(ctx)
+}
+
+// launchTUIWithState boots the legacy route-first shell for explicit compatibility flows.
 func (a *App) launchTUIWithState(ctx context.Context, state appShellLaunchState) error {
 	baseCtx, cancel := context.WithCancel(commandContext(ctx))
 	defer cancel()
 	current := state
 	for {
-		finalModel, err := tea.NewProgram(newAppShellModel(a, current, baseCtx), tea.WithAltScreen()).Run()
+		finalModel, err := runTeaProgram(newAppShellModel(a, current, baseCtx), tea.WithAltScreen())
 		if err != nil {
 			return err
 		}
@@ -394,13 +404,13 @@ func (a *App) launchTUIWithState(ctx context.Context, state appShellLaunchState)
 			}
 			project, _, err := a.ensureProjectWithNotice(baseCtx, cwd, filepath.Base(cwd), false, false)
 			if err != nil {
-				current = model.nextLaunchState()
+				current = model.nextLegacyLaunchState()
 				current.Route = appRouteHome
 				current.Notice = err.Error()
 				current.Alert = true
 				continue
 			}
-			current = model.nextLaunchState()
+			current = model.nextLegacyLaunchState()
 			current.Route = appRouteScanReview
 			current.SelectedProjectID = project.ID
 			current.Notice = a.catalog.T("project_registered", project.DisplayName)
@@ -408,19 +418,19 @@ func (a *App) launchTUIWithState(ctx context.Context, state appShellLaunchState)
 		case appShellActionPickFolder:
 			project, _, err := a.ensureProjectWithNotice(baseCtx, "", "", true, false)
 			if err != nil {
-				current = model.nextLaunchState()
+				current = model.nextLegacyLaunchState()
 				current.Route = appRouteHome
 				current.Notice = err.Error()
 				current.Alert = true
 				continue
 			}
-			current = model.nextLaunchState()
+			current = model.nextLegacyLaunchState()
 			current.Route = appRouteScanReview
 			current.SelectedProjectID = project.ID
 			current.Notice = a.catalog.T("project_registered", project.DisplayName)
 			current.Alert = false
 		default:
-			current = model.nextLaunchState()
+			current = model.nextLegacyLaunchState()
 		}
 	}
 }

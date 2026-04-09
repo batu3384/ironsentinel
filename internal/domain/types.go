@@ -299,6 +299,7 @@ type ScanProfile struct {
 	Mode             ScanMode          `json:"mode"`
 	Isolation        IsolationMode     `json:"isolation,omitempty"`
 	Coverage         CoverageProfile   `json:"coverage,omitempty"`
+	BestEffort       bool              `json:"bestEffort,omitempty"`
 	PresetID         CompliancePreset  `json:"presetId,omitempty"`
 	Modules          []string          `json:"modules"`
 	SeverityGate     Severity          `json:"severityGate"`

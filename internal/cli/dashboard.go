@@ -54,30 +54,44 @@ func (a *App) overviewPlainReport(snapshot portfolioSnapshot) string {
 	}
 	available, drift, missing, failed := runtimeToolHealthCounts(runtime)
 
-	lines := []string{
-		fmt.Sprintf("%s overview", strings.ToUpper(brandProductName)),
-		fmt.Sprintf("%s: %s", a.catalog.T("status"), a.portfolioPosture(snapshot)),
-		fmt.Sprintf("%s: %d", a.catalog.T("projects_title"), len(snapshot.Projects)),
-		fmt.Sprintf("%s: %d (%s %d, %s %d, %s %d)", a.catalog.T("runs_title"), len(snapshot.Runs), a.catalog.T("status_queued"), queued, a.catalog.T("status_running"), running, a.catalog.T("status_canceled"), canceled),
-		fmt.Sprintf("%s: %d (%s %d, %s %d, %s %d)", a.catalog.T("findings_title"), len(snapshot.Findings), a.catalog.T("triage_open"), open, a.catalog.T("summary_critical"), critical, a.catalog.T("summary_high"), high),
-		fmt.Sprintf("%s: %d %s, %d %s, %d %s, %d %s", a.catalog.T("runtime_command_title"), available, a.catalog.T("runtime_available"), drift, a.catalog.T("runtime_doctor_outdated"), missing, a.catalog.T("runtime_missing"), failed, a.catalog.T("runtime_failed_tools")),
-		fmt.Sprintf("%s: %s", a.catalog.T("overview_operator_focus"), a.recommendNextStep(snapshot)),
-	}
 	headline := strings.TrimSpace(a.renderQueueHeadlineFromSnapshot(snapshot, snapshot.Runs))
 	if headline == a.catalog.T("watch_no_active_runs") && len(snapshot.Runs) > 0 {
 		latest := snapshot.Runs[0]
 		headline = fmt.Sprintf("%s | %s | %s", latest.ID, strings.ToUpper(string(latest.Status)), snapshot.projectLabel(latest.ProjectID))
 	}
-	if headline != "" {
-		lines = append(lines, fmt.Sprintf("%s: %s", a.catalog.T("overview_recent_runs"), headline))
-	}
+	hotFindingSummary := a.catalog.T("overview_no_findings")
 	if hotFindings := a.prioritizedFindings(snapshot.Findings, 3); len(hotFindings) > 0 {
-		lines = append(lines, a.catalog.T("overview_hot_findings")+":")
+		summaries := make([]string, 0, len(hotFindings))
 		for _, finding := range hotFindings {
-			lines = append(lines, "- "+a.hottestFindingLine(finding, 72))
+			summaries = append(summaries, a.hottestFindingLine(finding, 48))
 		}
+		hotFindingSummary = strings.Join(summaries, " || ")
 	}
-	lines = append(lines, "")
+	if headline == "" {
+		headline = a.catalog.T("watch_no_active_runs")
+	}
+	lines := []string{
+		fmt.Sprintf("%s overview", strings.ToUpper(brandProductName)),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_launch"),
+			fmt.Sprintf("%s: %s", a.catalog.T("status"), a.portfolioPosture(snapshot)),
+			fmt.Sprintf("%s: %d", a.catalog.T("projects_title"), len(snapshot.Projects)),
+			fmt.Sprintf("%s: %d %s, %d %s, %d %s, %d %s", a.catalog.T("runtime_command_title"), available, a.catalog.T("runtime_available"), drift, a.catalog.T("runtime_doctor_outdated"), missing, a.catalog.T("runtime_missing"), failed, a.catalog.T("runtime_failed_tools")),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_operator_focus"), a.recommendNextStep(snapshot)),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_mission"),
+			fmt.Sprintf("%s: %d (%s %d, %s %d, %s %d)", a.catalog.T("runs_title"), len(snapshot.Runs), a.catalog.T("status_queued"), queued, a.catalog.T("status_running"), running, a.catalog.T("status_canceled"), canceled),
+			fmt.Sprintf("%s: %d (%s %d, %s %d, %s %d)", a.catalog.T("findings_title"), len(snapshot.Findings), a.catalog.T("triage_open"), open, a.catalog.T("summary_critical"), critical, a.catalog.T("summary_high"), high),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_recent_runs"), headline),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_debrief"),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_hot_findings"), hotFindingSummary),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_next_steps"), a.recommendNextStep(snapshot)),
+		),
+		"",
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -544,18 +558,21 @@ func (a *App) runtimePlainReport(runtime domain.RuntimeStatus) string {
 
 	lines := []string{
 		fmt.Sprintf("%s runtime", strings.ToUpper(brandProductName)),
-		fmt.Sprintf("%s: %s", a.catalog.T("status"), a.portfolioPosture(snapshot)),
-		fmt.Sprintf("%s: %d %s, %d %s, %d %s, %d %s", a.catalog.T("runtime_trust_signal_title"), available, a.catalog.T("runtime_available"), drift, a.catalog.T("runtime_doctor_outdated"), missing, a.catalog.T("runtime_missing"), failed, a.catalog.T("runtime_failed_tools")),
-		fmt.Sprintf("%s: %s", a.catalog.T("runtime_daemon_state"), a.daemonStateLabel(runtime.Daemon)),
-		fmt.Sprintf("%s: %s", a.catalog.T("runtime_effective_mode"), strings.ToUpper(string(runtime.Isolation.EffectiveMode))),
-		fmt.Sprintf("%s: %s", a.catalog.T("runtime_engine"), coalesceString(runtime.Isolation.Engine, "-")),
-		fmt.Sprintf("%s: %t", a.catalog.T("runtime_rootless"), runtime.Isolation.Rootless),
-		fmt.Sprintf("%s: %d/%d", a.catalog.T("runtime_mirrors_title"), mirrorReady, mirrorReady+mirrorMissing),
-		fmt.Sprintf("%s: %d/%d/%d", a.catalog.T("runtime_support_title"), supported, partial, unsupported),
-		fmt.Sprintf("%s: %s", a.catalog.T("runtime_output_dir"), a.cfg.OutputDir),
-		fmt.Sprintf("%s: %s", a.catalog.T("data_dir"), a.cfg.DataDir),
-		fmt.Sprintf("%s: %s", a.catalog.T("overview_operator_focus"), operatorFocus),
-		a.catalog.T("runtime_scanners_title") + ":",
+		"",
+		renderPlainStage(a.catalog.T("console_stage_launch"),
+			fmt.Sprintf("%s: %s", a.catalog.T("status"), a.portfolioPosture(snapshot)),
+			fmt.Sprintf("%s: %d %s, %d %s, %d %s, %d %s", a.catalog.T("runtime_trust_signal_title"), available, a.catalog.T("runtime_available"), drift, a.catalog.T("runtime_doctor_outdated"), missing, a.catalog.T("runtime_missing"), failed, a.catalog.T("runtime_failed_tools")),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_daemon_state"), a.daemonStateLabel(runtime.Daemon)),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_effective_mode"), strings.ToUpper(string(runtime.Isolation.EffectiveMode))),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_mission"),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_engine"), coalesceString(runtime.Isolation.Engine, "-")),
+			fmt.Sprintf("%s: %t", a.catalog.T("runtime_rootless"), runtime.Isolation.Rootless),
+			fmt.Sprintf("%s: %d/%d", a.catalog.T("runtime_mirrors_title"), mirrorReady, mirrorReady+mirrorMissing),
+			fmt.Sprintf("%s: %d/%d/%d", a.catalog.T("runtime_support_title"), supported, partial, unsupported),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_scanners_title"), a.catalog.T("show_details")),
+		),
 	}
 	for _, tool := range runtime.ScannerBundle {
 		status := a.catalog.T("runtime_missing")
@@ -569,7 +586,15 @@ func (a *App) runtimePlainReport(runtime domain.RuntimeStatus) string {
 		}
 		lines = append(lines, fmt.Sprintf("- %s | %s | %s | %s", tool.Name, status, coalesceString(tool.ActualVersion, tool.ExpectedVersion), coalesceString(tool.Path, "-")))
 	}
-	lines = append(lines, "")
+	lines = append(lines,
+		"",
+		renderPlainStage(a.catalog.T("console_stage_debrief"),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_output_dir"), a.cfg.OutputDir),
+			fmt.Sprintf("%s: %s", a.catalog.T("data_dir"), a.cfg.DataDir),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_operator_focus"), operatorFocus),
+		),
+		"",
+	)
 	return strings.Join(lines, "\n")
 }
 

@@ -182,10 +182,10 @@ func (m appShellModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, loadAppShellSnapshotCmd(m.app, m.route, true, m.refreshSeq)
 	case "tab", "right", "l":
-		m.setRoutePreservingState(m.nextPrimaryRoute(1))
+		m.setRoutePreservingState(m.nextCompatibilityRoute(1))
 		return m, tea.Batch(m.animationCmd(), m.scheduleBackgroundLoads())
 	case "shift+tab", "left", "h":
-		m.setRoutePreservingState(m.nextPrimaryRoute(-1))
+		m.setRoutePreservingState(m.nextCompatibilityRoute(-1))
 		return m, tea.Batch(m.animationCmd(), m.scheduleBackgroundLoads())
 	case "1":
 		m.setRoutePreservingState(appRouteHome)

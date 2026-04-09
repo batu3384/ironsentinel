@@ -154,7 +154,7 @@ func (a *App) consoleCommand() *cobra.Command {
 			if err := a.requireInteractiveSurface(); err != nil {
 				return err
 			}
-			return a.launchTUI(cmd.Context())
+			return a.launchPrimaryTUI(cmd.Context())
 		},
 	}
 }

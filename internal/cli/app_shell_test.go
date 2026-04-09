@@ -15,7 +15,7 @@ import (
 	"github.com/batu3384/ironsentinel/internal/i18n"
 )
 
-func TestNewAppShellModelDefaultsToHomeRoute(t *testing.T) {
+func TestNewLegacyAppShellModelDefaultsToHomeRoute(t *testing.T) {
 	app, project := newTestTUIApp(t)
 
 	model := newAppShellModel(app, appShellLaunchState{
@@ -33,6 +33,15 @@ func TestNewAppShellModelDefaultsToHomeRoute(t *testing.T) {
 	}
 	if model.reviewContext.projectID != project.ID {
 		t.Fatalf("expected initial review context project %s, got %s", project.ID, model.reviewContext.projectID)
+	}
+}
+
+func TestInitialInteractiveLegacyLaunchRouteUsesHomeForPicker(t *testing.T) {
+	if got := initialInteractiveLaunchRoute(true); got != appRouteHome {
+		t.Fatalf("expected picker startup route to be home, got %v", got)
+	}
+	if got := initialInteractiveLaunchRoute(false); got != appRouteScanReview {
+		t.Fatalf("expected non-picker startup route to be scan review, got %v", got)
 	}
 }
 
@@ -1574,17 +1583,17 @@ func TestAppShellIgnoresStaleSnapshotSequence(t *testing.T) {
 	}
 }
 
-func TestAppShellSecondaryProjectsRouteUsesStablePrimaryNavigation(t *testing.T) {
+func TestAppShellSecondaryProjectsRouteUsesStableCompatibilityNavigation(t *testing.T) {
 	app, _ := newTestTUIApp(t)
 	model := newAppShellModel(app, appShellLaunchState{
 		Route:  appRouteHome,
 		Review: defaultScanReviewState(app.cfg.SandboxMode),
 	})
 	model.route = appRouteProjects
-	if got := model.nextPrimaryRoute(1); got != appRouteScanReview {
+	if got := model.nextCompatibilityRoute(1); got != appRouteScanReview {
 		t.Fatalf("expected projects route to advance to scan review, got %v", got)
 	}
-	if got := model.nextPrimaryRoute(-1); got != appRouteHome {
+	if got := model.nextCompatibilityRoute(-1); got != appRouteHome {
 		t.Fatalf("expected projects route to go back to home, got %v", got)
 	}
 }

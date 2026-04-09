@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Route content below is retained for the legacy route-first compatibility shell.
+
 func (m appShellModel) renderHomeContent(width int) string {
 	projects := m.homeRows()
 	veryCompact := m.height < 29

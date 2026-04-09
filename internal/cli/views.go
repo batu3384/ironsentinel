@@ -32,6 +32,7 @@ type liveScanConsole struct {
 	lastEvent      string
 	lastFinding    string
 	lastModule     string
+	lastTool       string
 	lastPhase      string
 	lastStatus     string
 	recentFindings []domain.Finding
@@ -46,7 +47,7 @@ func (a *App) renderInitialLanguageOnboarding() {
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
 			{
-				Data: pterm.Sprintf(
+				Data: a.ptermSprintf(
 					"%s\n[cyan]%s[-]\n%s\n%s",
 					a.catalog.T("app_title"),
 					a.catalog.T("language_onboarding_default", a.languageLabel(i18n.Parse(a.cfg.DefaultLanguage))),
@@ -55,7 +56,7 @@ func (a *App) renderInitialLanguageOnboarding() {
 				),
 			},
 			{
-				Data: pterm.Sprintf(
+				Data: a.ptermSprintf(
 					"%s\n%s\n%s\n[cyan]%s[-]",
 					a.catalog.T("language_onboarding_persistence_title"),
 					a.catalog.T("language_onboarding_persistence_body"),
@@ -64,7 +65,7 @@ func (a *App) renderInitialLanguageOnboarding() {
 				),
 			},
 			{
-				Data: pterm.Sprintf(
+				Data: a.ptermSprintf(
 					"%s\n- [cyan]%s[-]\n- [cyan]%s[-]\n- [cyan]%s[-]",
 					a.catalog.T("language_onboarding_next_title"),
 					a.commandHint("scan"),
@@ -92,6 +93,9 @@ func (a *App) renderRunWatchFrame(runID string, interval time.Duration) error {
 
 	pterm.Info.Println(a.catalog.T("watch_interval", interval.String()))
 	a.renderRunSummary(run, project, findings)
+	if a.shellSafeSurfaceOutput() {
+		return nil
+	}
 	report, err := a.service.BuildRunReport(runID, "")
 	if err != nil {
 		return err
@@ -107,9 +111,9 @@ func (a *App) renderQueueWatchFrame() error {
 
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("status_queued"), counts.Queued)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("status_running"), counts.Running)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("status_canceled"), counts.Canceled)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("status_queued"), counts.Queued)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("status_running"), counts.Running)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("status_canceled"), counts.Canceled)},
 		},
 	}).Render()
 
@@ -143,9 +147,9 @@ func (a *App) startLiveScanTracker(project domain.Project, profile domain.ScanPr
 	phaseLines := strings.Join(a.scanPhaseLines(profile.Modules), "\n")
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), project.DisplayName, a.catalog.T("coverage_profile"), a.coverageLabel(profile.Coverage))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_mode"), a.modeLabel(profile.Mode), a.catalog.T("scan_modules"), a.moduleCount(profile.Modules))},
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("scan_live_phases"), phaseLines)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), project.DisplayName, a.catalog.T("coverage_profile"), a.coverageLabel(profile.Coverage))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_mode"), a.modeLabel(profile.Mode), a.catalog.T("scan_modules"), a.moduleCount(profile.Modules))},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("scan_live_phases"), phaseLines)},
 		},
 	}).Render()
 	spinner, _ := pterm.DefaultSpinner.Start(a.catalog.T("scan_live_boot", project.DisplayName, a.moduleCount(profile.Modules)))
@@ -234,6 +238,7 @@ func (a *App) newLiveScanConsole(project domain.Project, profile domain.ScanProf
 		profile:        profile,
 		lastEvent:      a.catalog.T("scan_mc_boot"),
 		lastStatus:     a.catalog.T("scan_mc_status_booting"),
+		lastTool:       a.moduleToolLabel(firstModuleName(profile.Modules)),
 		telemetry:      []string{a.catalog.T("scan_mc_boot"), a.catalog.T("scan_mc_boot_lane", a.coverageLabel(profile.Coverage))},
 		recentFindings: make([]domain.Finding, 0, 5),
 	}
@@ -241,15 +246,24 @@ func (a *App) newLiveScanConsole(project domain.Project, profile domain.ScanProf
 
 func (c *liveScanConsole) update(a *App, event domain.StreamEvent) {
 	c.run = event.Run
-	c.frame++
+	if a.decorativeMotionEnabled() {
+		c.frame++
+	}
 	c.eventCount++
 	if strings.TrimSpace(event.Message) != "" {
 		c.lastEvent = event.Message
 	}
 	if event.Module != nil {
 		c.lastModule = event.Module.Name
+		c.lastTool = a.moduleToolLabel(c.lastModule)
 		c.lastPhase = a.modulePhaseLabel(c.lastModule)
 		c.lastStatus = string(event.Module.Status)
+	}
+	if event.Execution != nil {
+		c.lastTool = a.executionToolLabel(event.Execution, event.Attempt)
+	}
+	if event.Attempt != nil && strings.TrimSpace(c.lastTool) == "" {
+		c.lastTool = a.executionToolLabel(nil, event.Attempt)
 	}
 	if event.Finding != nil {
 		c.lastFinding = event.Finding.Title
@@ -296,20 +310,20 @@ func (c *liveScanConsole) render(a *App) {
 	pterm.Println()
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), c.project.DisplayName, a.catalog.T("project_path"), c.project.LocationHint)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(c.profile.Mode), a.catalog.T("coverage_profile"), a.coverageLabel(c.profile.Coverage))},
-			{Data: pterm.Sprintf("%s\n%s\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_risk"), risk, a.catalog.T("status"), a.statusBadge(c.lastStatus))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), c.project.DisplayName, a.catalog.T("project_path"), c.project.LocationHint)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(c.profile.Mode), a.catalog.T("coverage_profile"), a.coverageLabel(c.profile.Coverage))},
+			{Data: a.ptermSprintf("%s\n%s\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_risk"), risk, a.catalog.T("status"), a.statusBadge(c.lastStatus))},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_title"), a.catalog.T("scan_mc_agent_name"), a.catalog.T("scan_mc_agent_state"), agentState, a.catalog.T("scan_mc_agent_focus"), trimForSelect(agentFocus, 64))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_title"), a.catalog.T("scan_mc_agent_name"), a.catalog.T("scan_mc_agent_state"), agentState, a.catalog.T("scan_mc_agent_focus"), trimForSelect(agentFocus, 64))},
 			{Data: agentAvatar},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("scan_mc_lane"), defaultString(c.lastPhase, a.catalog.T("scan_phase_general")), a.catalog.T("scan_mc_module"), defaultString(c.lastModule, "-"))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("scan_mc_lane"), defaultString(c.lastPhase, a.catalog.T("scan_phase_general")), a.catalog.T("scan_mc_module"), defaultString(c.lastModule, "-"))},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_activity"), trimForSelect(c.lastEvent, 96))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_thought"), trimForSelect(agentThought, 96))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("summary_total"), c.run.Summary.TotalFindings)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_last_finding"), defaultString(trimForSelect(c.lastFinding, 72), "-"), a.catalog.T("summary_total"), fmt.Sprintf("%d", c.run.Summary.TotalFindings))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_activity"), trimForSelect(c.lastEvent, 96))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_thought"), trimForSelect(agentThought, 96))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("summary_total"), c.run.Summary.TotalFindings)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_last_finding"), defaultString(trimForSelect(c.lastFinding, 72), "-"), a.catalog.T("summary_total"), fmt.Sprintf("%d", c.run.Summary.TotalFindings))},
 		},
 	}).Render()
 
@@ -405,11 +419,11 @@ func (a *App) renderInlineModulePulse(run domain.ScanRun) {
 	queued, running, completed, failed, skipped := a.moduleStatusCounts(run.ModuleResults)
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_queued_count"), queued)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_running_count"), running)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_completed_count"), completed)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_failed_count"), failed)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_queued_count"), queued)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_running_count"), running)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_completed_count"), completed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_failed_count"), failed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped)},
 		},
 	}).Render()
 
@@ -524,7 +538,11 @@ func (a *App) missionAgentAvatar(c *liveScanConsole) string {
 		head = "::"
 	}
 
-	frame := frames[c.frame%len(frames)]
+	frameIndex := 0
+	if a.decorativeMotionEnabled() {
+		frameIndex = c.frame % len(frames)
+	}
+	frame := frames[frameIndex]
 	frame = strings.ReplaceAll(frame, "EE", eyes)
 	frame = strings.ReplaceAll(frame, "MM", mouth)
 	frame = strings.ReplaceAll(frame, "HH", head)
@@ -753,6 +771,18 @@ func (a *App) renderInlineFindingCards(findings []domain.Finding, limit int) {
 	}
 }
 
+func renderPlainStage(title string, lines ...string) string {
+	stageLines := []string{strings.TrimSpace(title) + ":"}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		stageLines = append(stageLines, "- "+line)
+	}
+	return strings.Join(stageLines, "\n")
+}
+
 func (a *App) renderProjects(projects []domain.Project) error {
 	pterm.Println(a.renderStaticBrandHero(a.catalog.T("projects_title")))
 	pterm.Println()
@@ -914,6 +944,9 @@ func (a *App) renderRunDetails(runID string) error {
 	pterm.Println(a.renderStaticBrandHero(a.catalog.T("show_title")))
 	pterm.Println()
 	a.renderRunSummary(run, project, findings)
+	if a.shellSafeSurfaceOutput() {
+		return nil
+	}
 	report, err := a.service.BuildRunReport(runID, "")
 	if err != nil {
 		return err
@@ -931,6 +964,11 @@ func (a *App) renderRunDetails(runID string) error {
 }
 
 func (a *App) renderRunSummary(run domain.ScanRun, project *domain.Project, findings []domain.Finding) {
+	if a.shellSafeSurfaceOutput() {
+		fmt.Print(a.renderPlainRunSummary(run, project, findings))
+		return
+	}
+
 	finished := "-"
 	if run.FinishedAt != nil {
 		finished = run.FinishedAt.Local().Format(time.RFC822)
@@ -1011,7 +1049,7 @@ func (a *App) renderRunSummary(run domain.ScanRun, project *domain.Project, find
 				a.catalog.T("artifact_count"),
 				len(run.ArtifactRefs),
 			)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]",
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]",
 				a.catalog.T("finding_hotlist_title"),
 				hotFindingSummary,
 				a.catalog.T("finding_exposure_title"),
@@ -1119,14 +1157,14 @@ func (a *App) renderScanOutcome(run domain.ScanRun, findings []domain.Finding, r
 
 	panel := pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_outcome_verdict"), verdict)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_outcome_confidence"), confidence)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_completed"), completed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_outcome_verdict"), verdict)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_outcome_confidence"), confidence)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_completed"), completed)},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_failed"), failed)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_skipped"), skipped)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("summary_total"), len(findings))},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_failed"), failed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("scan_modules_skipped"), skipped)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("summary_total"), len(findings))},
 		},
 	}
 	_ = pterm.DefaultPanel.WithPanels(panel).Render()
@@ -1243,9 +1281,9 @@ func (a *App) renderFindingSpotlight(findings []domain.Finding, limit int) {
 	for _, finding := range findings[:limit] {
 		_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 			{
-				{Data: pterm.Sprintf("%s\n%s\n%s\n[cyan]%s[-]", a.catalog.T("severity"), a.severityBadge(finding.Severity), a.catalog.T("category"), a.categoryLabel(finding.Category))},
-				{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("module"), finding.Module, a.catalog.T("location"), coalesceString(finding.Location, "-"))},
-				{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), trimForSelect(finding.Title, 70), a.catalog.T("rule"), defaultString(finding.RuleID, "-"))},
+				{Data: a.ptermSprintf("%s\n%s\n%s\n[cyan]%s[-]", a.catalog.T("severity"), a.severityBadge(finding.Severity), a.catalog.T("category"), a.categoryLabel(finding.Category))},
+				{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("module"), finding.Module, a.catalog.T("location"), coalesceString(finding.Location, "-"))},
+				{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), trimForSelect(finding.Title, 70), a.catalog.T("rule"), defaultString(finding.RuleID, "-"))},
 			},
 		}).Render()
 	}
@@ -1272,11 +1310,69 @@ func (a *App) renderAnalystHandoff(run domain.ScanRun, findings []domain.Finding
 
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_primary"), primaryAction)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_secondary"), secondaryAction)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), topFinding)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_primary"), primaryAction)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_secondary"), secondaryAction)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), topFinding)},
 		},
 	}).Render()
+}
+
+func (a *App) renderPlainRunSummary(run domain.ScanRun, project *domain.Project, findings []domain.Finding) string {
+	projectName := run.ProjectID
+	projectPath := "-"
+	if project != nil {
+		projectName = project.DisplayName
+		projectPath = project.LocationHint
+	}
+	finished := "-"
+	if run.FinishedAt != nil {
+		finished = run.FinishedAt.Local().Format(time.RFC822)
+	}
+
+	requiredErr := error(nil)
+	if run.Status == domain.ScanCompleted {
+		requiredErr = a.enforceRequiredModuleResults(run, run.Profile.Modules)
+	}
+
+	lines := []string{
+		renderPlainStage(a.catalog.T("console_stage_launch"),
+			fmt.Sprintf("%s: %s", a.catalog.T("title"), projectName),
+			fmt.Sprintf("%s: %s", a.catalog.T("project_path"), projectPath),
+			fmt.Sprintf("%s: %s", a.catalog.T("status"), strings.ToUpper(string(run.Status))),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_mode"), a.modeLabel(run.Profile.Mode)),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_mission"),
+			fmt.Sprintf("%s: %s", a.catalog.T("run_id"), run.ID),
+			fmt.Sprintf("%s: %s", a.catalog.T("started_at"), run.StartedAt.Local().Format(time.RFC822)),
+			fmt.Sprintf("%s: %s", a.catalog.T("finished_at"), finished),
+			fmt.Sprintf("%s: %d", a.catalog.T("scan_modules"), len(run.ModuleResults)),
+			fmt.Sprintf("%s: %d", a.catalog.T("scan_findings"), len(findings)),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_blocked"), ternary(run.Summary.Blocked, a.catalog.T("scan_blocked_yes"), a.catalog.T("scan_blocked_no"))),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_debrief"),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_live_pressure"), a.scanPostureSummary(run)),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_next_steps"), a.plainNextAction(run, findings, requiredErr)),
+		),
+		"",
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *App) plainNextAction(run domain.ScanRun, findings []domain.Finding, requiredErr error) string {
+	switch {
+	case run.Status == domain.ScanQueued || run.Status == domain.ScanRunning:
+		return a.commandHint("runs", "watch", run.ID)
+	case run.Status == domain.ScanFailed || run.Status == domain.ScanCanceled:
+		return a.catalog.T("scan_debrief_action_show", run.ID)
+	case requiredErr != nil:
+		return a.catalog.T("scan_debrief_action_doctor")
+	case len(findings) > 0:
+		return a.catalog.T("scan_debrief_action_review")
+	default:
+		return a.catalog.T("scan_debrief_action_watch")
+	}
 }
 
 func (a *App) renderMissionDebrief(project domain.Project, run domain.ScanRun, findings []domain.Finding, requiredErr error) {
@@ -1299,14 +1395,14 @@ func (a *App) renderMissionDebrief(project domain.Project, run domain.ScanRun, f
 	pterm.Println()
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n%s", a.catalog.T("title"), project.DisplayName, a.catalog.T("status"), a.statusBadge(string(run.Status)))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(run.Profile.Mode), a.catalog.T("coverage_profile"), a.coverageLabel(run.Profile.Coverage))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_outcome_confidence"), coverage, a.catalog.T("summary_total"), run.Summary.TotalFindings)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n%s", a.catalog.T("title"), project.DisplayName, a.catalog.T("status"), a.statusBadge(string(run.Status)))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(run.Profile.Mode), a.catalog.T("coverage_profile"), a.coverageLabel(run.Profile.Coverage))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_outcome_confidence"), coverage, a.catalog.T("summary_total"), run.Summary.TotalFindings)},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_modules_completed"), len(run.ModuleResults)-failed-skipped, a.catalog.T("module_failed_count"), failed)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped, a.catalog.T("module_retried_count"), retried)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), topFinding)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_modules_completed"), len(run.ModuleResults)-failed-skipped, a.catalog.T("module_failed_count"), failed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped, a.catalog.T("module_retried_count"), retried)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), topFinding)},
 		},
 	}).Render()
 
@@ -1345,12 +1441,41 @@ func (a *App) scanDebriefActionLines(run domain.ScanRun, findings []domain.Findi
 	return lines
 }
 
+func (a *App) consoleDebriefActionSummary(run domain.ScanRun, findings []domain.Finding, requiredErr error) string {
+	lines := a.scanDebriefActionLines(run, findings, requiredErr)
+	if len(lines) == 0 {
+		return "-"
+	}
+	lines = limitStringSlice(lines, 2)
+	return strings.Join(lines, " • ")
+}
+
+func (a *App) consoleDebriefModuleSummary(run domain.ScanRun) string {
+	_, _, completed, failed, skipped := a.moduleStatusCounts(run.ModuleResults)
+	return fmt.Sprintf(
+		"%s %d • %s %d • %s %d",
+		a.catalog.T("module_completed_count"),
+		completed,
+		a.catalog.T("module_failed_count"),
+		failed,
+		a.catalog.T("module_skipped_count"),
+		skipped,
+	)
+}
+
 func extractModuleNames(modules []domain.ModuleResult) []string {
 	names := make([]string, 0, len(modules))
 	for _, module := range modules {
 		names = append(names, module.Name)
 	}
 	return names
+}
+
+func limitStringSlice(items []string, count int) []string {
+	if len(items) <= count {
+		return items
+	}
+	return items[:count]
 }
 
 func (a *App) renderRunDeltaView(runID, baselineRunID string) error {
@@ -1382,10 +1507,10 @@ func (a *App) runRegressionGateWithVEX(runID, baselineRunID string, threshold do
 
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("run_id"), current.ID)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("gate_threshold"), a.severityBadge(threshold))},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("gate_blocking_count"), len(blocking))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("run_id"), current.ID)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("gate_threshold"), a.severityBadge(threshold))},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("gate_blocking_count"), len(blocking))},
 		},
 	}).Render()
 
@@ -1424,10 +1549,10 @@ func (a *App) renderPolicyEvaluation(current domain.ScanRun, baseline *domain.Sc
 	pterm.DefaultHeader.Println(a.catalog.T("policy_title"))
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("run_id"), current.ID)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("policy_id"), evaluation.PolicyID)},
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("status"), ternary(evaluation.Passed, a.statusBadge("available"), a.statusBadge("failed")))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("run_id"), current.ID)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("policy_id"), evaluation.PolicyID)},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("status"), ternary(evaluation.Passed, a.statusBadge("available"), a.statusBadge("failed")))},
 		},
 	}).Render()
 
@@ -1464,17 +1589,17 @@ func (a *App) renderRunDelta(current domain.ScanRun, delta domain.RunDelta, base
 	pterm.Println()
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_current"), current.ID)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_current"), current.ID)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("diff_baseline"), baselineLabel)},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("diff_new"), pterm.LightRed(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingNew])))},
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("diff_existing"), pterm.LightYellow(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingExisting])))},
-			{Data: pterm.Sprintf("%s\n%s", a.catalog.T("diff_resolved"), pterm.LightGreen(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingResolved])))},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("diff_new"), pterm.LightRed(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingNew])))},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("diff_existing"), pterm.LightYellow(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingExisting])))},
+			{Data: a.ptermSprintf("%s\n%s", a.catalog.T("diff_resolved"), pterm.LightGreen(fmt.Sprintf("%d", delta.CountsByChange[domain.FindingResolved])))},
 		},
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("finding_hotlist_title"), newSummary)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), resolvedSummary)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("finding_hotlist_title"), newSummary)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_handoff_top_finding"), resolvedSummary)},
 		},
 	}).Render()
 
@@ -1530,10 +1655,10 @@ func (a *App) renderModules(modules []domain.ModuleResult) {
 	}
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_queued_count"), queued, a.catalog.T("module_running_count"), running)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_completed_count"), completed, a.catalog.T("module_failed_count"), failed)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped, a.catalog.T("module_retried_count"), retried)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("overview_operator_focus"), focusSummary)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_queued_count"), queued, a.catalog.T("module_running_count"), running)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_completed_count"), completed, a.catalog.T("module_failed_count"), failed)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_skipped_count"), skipped, a.catalog.T("module_retried_count"), retried)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("overview_operator_focus"), focusSummary)},
 		},
 	}).Render()
 	pterm.Println()
@@ -1577,9 +1702,9 @@ func (a *App) renderArtifacts(artifacts []domain.ArtifactRef) error {
 	redacted, encrypted := artifactProtectionCounts(artifacts)
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("artifact_count"), len(artifacts))},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("artifact_redaction"), redacted, a.catalog.T("artifact_encryption"), encrypted)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("kind"), topArtifactKinds(artifacts, 3))},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("artifact_count"), len(artifacts))},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("artifact_redaction"), redacted, a.catalog.T("artifact_encryption"), encrypted)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("kind"), topArtifactKinds(artifacts, 3))},
 		},
 	}).Render()
 	pterm.Println()
@@ -1625,9 +1750,9 @@ func (a *App) renderExecutionTimeline(runID string) error {
 	}
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_execution_title"), len(traces))},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_failed_count"), failed, a.catalog.T("module_retried_count"), retried)},
-			{Data: pterm.Sprintf("%s\n[cyan]%d[-]", a.catalog.T("module_running_count"), active)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_execution_title"), len(traces))},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%d[-]", a.catalog.T("module_failed_count"), failed, a.catalog.T("module_retried_count"), retried)},
+			{Data: a.ptermSprintf("%s\n[cyan]%d[-]", a.catalog.T("module_running_count"), active)},
 		},
 	}).Render()
 	pterm.Println()
@@ -2089,9 +2214,9 @@ func (a *App) renderDASTPlan(plan domain.DastPlan, targets []domain.DastTarget) 
 
 	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
 		{
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("project_id"), plan.ProjectID)},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("dast_policy"), strings.ToUpper(plan.Policy))},
-			{Data: pterm.Sprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_target"), targetSummary)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("project_id"), plan.ProjectID)},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("dast_policy"), strings.ToUpper(plan.Policy))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_target"), targetSummary)},
 		},
 	}).Render()
 
