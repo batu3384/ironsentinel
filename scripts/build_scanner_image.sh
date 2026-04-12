@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINERFILE="${APPSEC_CONTAINERFILE_PATH:-$ROOT_DIR/deploy/scanner-bundle.Containerfile}"
-IMAGE="${AEGIS_CONTAINER_IMAGE:-ghcr.io/batu3384/ironsentinel-scanner-bundle:latest}"
-ENGINE="${AEGIS_CONTAINER_ENGINE:-auto}"
-PLATFORM="${AEGIS_CONTAINER_PLATFORM:-}"
+IMAGE="${IRONSENTINEL_CONTAINER_IMAGE:-ghcr.io/batu3384/ironsentinel-scanner-bundle:latest}"
+ENGINE="${IRONSENTINEL_CONTAINER_ENGINE:-auto}"
+PLATFORM="${IRONSENTINEL_CONTAINER_PLATFORM:-}"
 PUSH=0
 
 usage() {

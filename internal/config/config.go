@@ -49,9 +49,9 @@ func Load() Config {
 		ProjectRoot:           cwd,
 		DataDir:               envFirst(filepath.Join(projectRuntimeRoot, "data"), "IRONSENTINEL_DATA_DIR", "APPSEC_DATA_DIR"),
 		OutputDir:             envFirst(filepath.Join(projectRuntimeRoot, "output"), "IRONSENTINEL_OUTPUT_DIR", "APPSEC_OUTPUT_DIR"),
-		DistDir:               envFirst(filepath.Join(appRoot, "dist"), "IRONSENTINEL_DIST_DIR", "AEGIS_DIST_DIR"),
+		DistDir:               envFirst(filepath.Join(appRoot, "dist"), "IRONSENTINEL_DIST_DIR"),
 		MirrorDir:             envFirst(filepath.Join(sharedRuntimeRoot, "mirrors"), "IRONSENTINEL_MIRROR_DIR", "APPSEC_MIRROR_DIR"),
-		ToolsDir:              envFirst(filepath.Join(sharedRuntimeRoot, "tools", "bin"), "IRONSENTINEL_TOOLS_DIR", "AEGIS_TOOLS_DIR"),
+		ToolsDir:              envFirst(filepath.Join(sharedRuntimeRoot, "tools", "bin"), "IRONSENTINEL_TOOLS_DIR"),
 		YARARulesDir:          envFirst(filepath.Join(sharedRuntimeRoot, "rules", "yara"), "IRONSENTINEL_YARA_RULES_DIR", "APPSEC_YARA_RULES_DIR"),
 		ArtifactRetentionDays: envIntFirst(30, "IRONSENTINEL_ARTIFACT_RETENTION_DAYS", "APPSEC_ARTIFACT_RETENTION_DAYS"),
 		ArtifactRedaction:     envBoolFirst(true, "IRONSENTINEL_ARTIFACT_REDACTION", "APPSEC_ARTIFACT_REDACTION"),
@@ -61,16 +61,16 @@ func Load() Config {
 		InstallScript:         envFirst(installScript, "IRONSENTINEL_INSTALL_SCRIPT", "APPSEC_INSTALL_SCRIPT"),
 		ImageBuildScript:      envFirst(imageBuildScript, "IRONSENTINEL_IMAGE_BUILD_SCRIPT", "APPSEC_IMAGE_BUILD_SCRIPT"),
 		ContainerfilePath:     envFirst(filepath.Join(appRoot, "deploy", "scanner-bundle.Containerfile"), "IRONSENTINEL_CONTAINERFILE_PATH", "APPSEC_CONTAINERFILE_PATH"),
-		SandboxMode:           envFirst("auto", "IRONSENTINEL_SANDBOX_MODE", "AEGIS_SANDBOX_MODE"),
-		ContainerEngine:       envFirst("auto", "IRONSENTINEL_CONTAINER_ENGINE", "AEGIS_CONTAINER_ENGINE"),
-		ContainerImage:        envFirst("ghcr.io/batu3384/ironsentinel-scanner-bundle:latest", "IRONSENTINEL_CONTAINER_IMAGE", "AEGIS_CONTAINER_IMAGE"),
-		ContainerPlatform:     envFirst(defaultContainerPlatform(), "IRONSENTINEL_CONTAINER_PLATFORM", "AEGIS_CONTAINER_PLATFORM"),
+		SandboxMode:           envFirst("auto", "IRONSENTINEL_SANDBOX_MODE"),
+		ContainerEngine:       envFirst("auto", "IRONSENTINEL_CONTAINER_ENGINE"),
+		ContainerImage:        envFirst("ghcr.io/batu3384/ironsentinel-scanner-bundle:latest", "IRONSENTINEL_CONTAINER_IMAGE"),
+		ContainerPlatform:     envFirst(defaultContainerPlatform(), "IRONSENTINEL_CONTAINER_PLATFORM"),
 		OfflineMode:           envBoolFirst(false, "IRONSENTINEL_OFFLINE_MODE", "APPSEC_OFFLINE_MODE"),
 	}
 }
 
 func resolveAppRoot(cwd, buildRoot, fallback string) string {
-	for _, envKey := range []string{"IRONSENTINEL_HOME", "APPSEC_HOME", "AEGIS_HOME"} {
+	for _, envKey := range []string{"IRONSENTINEL_HOME", "APPSEC_HOME"} {
 		if root := strings.TrimSpace(os.Getenv(envKey)); root != "" {
 			return root
 		}
@@ -130,7 +130,7 @@ func defaultContainerPlatform() string {
 }
 
 func defaultLanguage() string {
-	for _, key := range []string{"IRONSENTINEL_LANG", "AEGIS_LANG", "APPSEC_LANG"} {
+	for _, key := range []string{"IRONSENTINEL_LANG", "APPSEC_LANG"} {
 		if explicit := strings.TrimSpace(os.Getenv(key)); explicit != "" {
 			return explicit
 		}

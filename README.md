@@ -125,10 +125,10 @@ Default scans use `premium` coverage. For a portable built-in-only pass on a fre
 
 ## Environment Precedence
 
-IronSentinel now treats `IRONSENTINEL_*` as the canonical product namespace.
+IronSentinel uses the `IRONSENTINEL_*` product namespace.
 
 - preferred: `IRONSENTINEL_*`
-- compatibility during migration: `AEGIS_*`, `APPSEC_*`
+- compatibility during migration: `APPSEC_*`
 - precedence: canonical `IRONSENTINEL_*` values win when multiple aliases are set
 
 Examples:

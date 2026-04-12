@@ -49,7 +49,7 @@ for ($index = 0; $index -lt $args.Count; $index++) {
 }
 
 $RootDir = Split-Path -Parent $PSScriptRoot
-$ToolsDir = if ($env:AEGIS_TOOLS_DIR) { $env:AEGIS_TOOLS_DIR } else { Join-Path $RootDir "runtime\tools\bin" }
+$ToolsDir = if ($env:IRONSENTINEL_TOOLS_DIR) { $env:IRONSENTINEL_TOOLS_DIR } else { Join-Path $RootDir "runtime\tools\bin" }
 $ToolsRoot = Split-Path -Parent $ToolsDir
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "ironsentinel-installer"
 

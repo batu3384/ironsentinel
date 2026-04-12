@@ -7,7 +7,7 @@ import (
 )
 
 func TestDefaultLanguageFromExplicitEnv(t *testing.T) {
-	t.Setenv("AEGIS_LANG", "tr")
+	t.Setenv("APPSEC_LANG", "tr")
 	t.Setenv("IRONSENTINEL_LANG", "")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
@@ -19,7 +19,7 @@ func TestDefaultLanguageFromExplicitEnv(t *testing.T) {
 }
 
 func TestDefaultLanguageFromLocale(t *testing.T) {
-	t.Setenv("AEGIS_LANG", "")
+	t.Setenv("APPSEC_LANG", "")
 	t.Setenv("IRONSENTINEL_LANG", "")
 	t.Setenv("LC_ALL", "tr_TR.UTF-8")
 	t.Setenv("LC_MESSAGES", "")
@@ -31,7 +31,7 @@ func TestDefaultLanguageFromLocale(t *testing.T) {
 }
 
 func TestDefaultLanguageFallsBackToEnglish(t *testing.T) {
-	t.Setenv("AEGIS_LANG", "")
+	t.Setenv("APPSEC_LANG", "")
 	t.Setenv("IRONSENTINEL_LANG", "")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
@@ -44,7 +44,7 @@ func TestDefaultLanguageFallsBackToEnglish(t *testing.T) {
 
 func TestDefaultLanguagePrefersIronSentinelNamespace(t *testing.T) {
 	t.Setenv("IRONSENTINEL_LANG", "tr")
-	t.Setenv("AEGIS_LANG", "en")
+	t.Setenv("APPSEC_LANG", "en")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "")
@@ -92,7 +92,7 @@ func TestResolveAppRootPrefersIronSentinelHomeAlias(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("IRONSENTINEL_HOME", home)
 	t.Setenv("APPSEC_HOME", filepath.Join(t.TempDir(), "appsec"))
-	t.Setenv("AEGIS_HOME", filepath.Join(t.TempDir(), "aegis"))
+	t.Setenv("APPSEC_HOME", filepath.Join(t.TempDir(), "appsec"))
 
 	got := resolveAppRoot(cwd, buildRoot, filepath.Join(t.TempDir(), "fallback"))
 	if got != home {
@@ -110,8 +110,8 @@ func TestLoadPrefersIronSentinelEnvAliases(t *testing.T) {
 	t.Setenv("IRONSENTINEL_CONTAINER_IMAGE", "ghcr.io/example/ironsentinel:test")
 	t.Setenv("IRONSENTINEL_OFFLINE_MODE", "true")
 	t.Setenv("APPSEC_DATA_DIR", filepath.Join(root, "legacy-data"))
-	t.Setenv("AEGIS_TOOLS_DIR", filepath.Join(root, "legacy-tools"))
-	t.Setenv("AEGIS_CONTAINER_IMAGE", "ghcr.io/example/legacy:test")
+	t.Setenv("APPSEC_TOOLS_DIR", filepath.Join(root, "legacy-tools"))
+	t.Setenv("APPSEC_CONTAINER_IMAGE", "ghcr.io/example/legacy:test")
 
 	cfg := Load()
 	if cfg.DataDir != filepath.Join(root, "custom-data") {

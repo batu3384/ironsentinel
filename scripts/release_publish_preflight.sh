@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${AEGIS_RELEASE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ROOT="${IRONSENTINEL_RELEASE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 VERSION=""
-LOCK_PATH="${AEGIS_RELEASE_LOCK_PATH:-$ROOT/scanner-bundle.lock.json}"
+LOCK_PATH="${IRONSENTINEL_RELEASE_LOCK_PATH:-$ROOT/scanner-bundle.lock.json}"
 REQUIRE_SIGNING=0
 REQUIRE_TAG=0
 
@@ -100,7 +100,7 @@ if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" && "${GITHUB_
 fi
 
 if [[ $REQUIRE_SIGNING -eq 1 ]]; then
-  require_env AEGIS_RELEASE_PRIVATE_KEY_B64
+  require_env IRONSENTINEL_RELEASE_PRIVATE_KEY_B64
 fi
 
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then

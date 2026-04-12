@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export APPSEC_DATA_DIR="$TMP_DIR/data"
 export APPSEC_OUTPUT_DIR="$TMP_DIR/output"
 export APPSEC_MIRROR_DIR="$TMP_DIR/mirrors"
-export AEGIS_TOOLS_DIR="$TMP_DIR/tools/bin"
+export IRONSENTINEL_TOOLS_DIR="$TMP_DIR/tools/bin"
 
 echo "[smoke] isolated runtime root: $TMP_DIR"
 echo "[smoke] running core setup"

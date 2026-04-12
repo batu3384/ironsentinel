@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/i18n"
 )
 
 func TestPtermSprintfStripsMarkupWhenNoColor(t *testing.T) {
@@ -86,8 +87,8 @@ func TestPlainRunSummaryUsesDebriefOrder(t *testing.T) {
 	if strings.Index(report, launch) >= strings.Index(report, mission) || strings.Index(report, mission) >= strings.Index(report, debrief) {
 		t.Fatalf("expected plain run summary to preserve launch -> mission -> debrief order\n%s", report)
 	}
-	if !strings.Contains(report, app.catalog.T("overview_next_steps")) {
-		t.Fatalf("expected plain run summary to include next steps\n%s", report)
+	if !strings.Contains(report, app.catalog.T("scan_report_fix_plan_title")) {
+		t.Fatalf("expected plain run summary to include fix plan\n%s", report)
 	}
 }
 
@@ -182,6 +183,92 @@ func TestPlainDebriefSurfacesDoNotLeakPtermMarkup(t *testing.T) {
 
 	if strings.Contains(output, "[cyan]") || strings.Contains(output, "[-]") {
 		t.Fatalf("expected plain debrief surfaces to strip pterm markup\n%s", output)
+	}
+}
+
+func TestShellSafeLiveTrackerUsesPlainProgressWithoutCarriageReturns(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	originalTerminalIsTerminal := terminalIsTerminal
+	terminalIsTerminal = func(int) bool { return false }
+	t.Cleanup(func() {
+		terminalIsTerminal = originalTerminalIsTerminal
+	})
+
+	output := captureCLIStdout(t, func() error {
+		tracker := app.startLiveScanTracker(project, domain.ScanProfile{
+			Mode:     domain.ModeSafe,
+			Coverage: domain.CoverageCore,
+			Modules:  []string{"surface-inventory", "secret-heuristics"},
+		})
+		app.updateLiveScanTracker(tracker, domain.StreamEvent{
+			Type: "module.updated",
+			Module: &domain.ModuleResult{
+				Name:   "surface-inventory",
+				Status: domain.ModuleCompleted,
+			},
+		})
+		return nil
+	})
+
+	if strings.Contains(output, "\r") {
+		t.Fatalf("expected shell-safe tracker to avoid carriage-return spinner artifacts\n%q", output)
+	}
+	if !strings.Contains(output, "%") {
+		t.Fatalf("expected shell-safe tracker to emit percent progress\n%s", output)
+	}
+}
+
+func TestPlainRunSummaryIncludesSeverityBreakdownAndModuleOutcomeSummary(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	run := domain.ScanRun{
+		ID:        "run-rich-debrief",
+		ProjectID: project.ID,
+		Status:    domain.ScanCompleted,
+		Profile: domain.ScanProfile{
+			Mode: domain.ModeSafe,
+		},
+		StartedAt: time.Unix(1_763_000_000, 0).UTC(),
+		Summary: domain.ScanSummary{
+			TotalFindings: 2,
+			CountsBySeverity: map[domain.Severity]int{
+				domain.SeverityCritical: 1,
+				domain.SeverityHigh:     1,
+			},
+		},
+		ModuleResults: []domain.ModuleResult{
+			{Name: "semgrep", Status: domain.ModuleFailed},
+			{Name: "grype", Status: domain.ModuleSkipped},
+			{Name: "syft", Status: domain.ModuleCompleted},
+		},
+	}
+
+	report := app.renderPlainRunSummary(run, &project, []domain.Finding{
+		{Fingerprint: "fp-1", Severity: domain.SeverityCritical, Priority: 5.5, Title: "Potential GitHub personal access token"},
+		{Fingerprint: "fp-2", Severity: domain.SeverityHigh, Priority: 4.5, Title: "Reachable supply-chain issue"},
+	})
+
+	for _, expected := range []string{"KRİTİK 1", "YÜKSEK 1", "SEMGREP", "GRYPE", app.catalog.T("scan_report_blockers_title")} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("expected plain run summary to include %q\n%s", expected, report)
+		}
+	}
+}
+
+func TestDebriefSeverityBreakdownUsesNoFindingsCopyWhenEmpty(t *testing.T) {
+	app := &App{
+		lang:    i18n.TR,
+		catalog: i18n.New(i18n.TR),
+	}
+
+	label := app.debriefSeverityBreakdown(domain.ScanRun{Summary: domain.ScanSummary{CountsBySeverity: map[domain.Severity]int{}}})
+	if label != "Doğrulanmış bulgu yok" {
+		t.Fatalf("expected empty debrief severity summary to use no-findings copy, got %q", label)
 	}
 }
 

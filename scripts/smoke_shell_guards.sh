@@ -147,42 +147,42 @@ fi
 echo "[smoke] validating release publish preflight"
 PRECHECK_REPO="$TMP_DIR/preflight-repo"
 create_preflight_repo "$PRECHECK_REPO"
-AEGIS_RELEASE_ROOT="$PRECHECK_REPO" AEGIS_RELEASE_PRIVATE_KEY_B64=smoke-key \
+IRONSENTINEL_RELEASE_ROOT="$PRECHECK_REPO" IRONSENTINEL_RELEASE_PRIVATE_KEY_B64=smoke-key \
   bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-signing >/dev/null
 
 expect_failure "Release tag was not found locally" \
-  env AEGIS_RELEASE_ROOT="$PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-tag
+  env IRONSENTINEL_RELEASE_ROOT="$PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-tag
 
 (
   cd "$PRECHECK_REPO"
   git tag v0.0.0-smoke
 )
-AEGIS_RELEASE_ROOT="$PRECHECK_REPO" AEGIS_RELEASE_PRIVATE_KEY_B64=smoke-key \
+IRONSENTINEL_RELEASE_ROOT="$PRECHECK_REPO" IRONSENTINEL_RELEASE_PRIVATE_KEY_B64=smoke-key \
   bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-signing --require-tag >/dev/null
 
 DIRTY_PRECHECK_REPO="$TMP_DIR/preflight-repo-dirty"
 create_preflight_repo "$DIRTY_PRECHECK_REPO"
 printf '# dirty\n' >>"$DIRTY_PRECHECK_REPO/scanner-bundle.lock.json"
 expect_failure "Release publish requires a clean source tree" \
-  env AEGIS_RELEASE_ROOT="$DIRTY_PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
+  env IRONSENTINEL_RELEASE_ROOT="$DIRTY_PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
 
 UNTRACKED_PRECHECK_REPO="$TMP_DIR/preflight-repo-untracked"
 create_preflight_repo "$UNTRACKED_PRECHECK_REPO"
 printf 'untracked\n' >"$UNTRACKED_PRECHECK_REPO/untracked.txt"
 expect_failure "Release publish requires a clean source tree" \
-  env AEGIS_RELEASE_ROOT="$UNTRACKED_PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
+  env IRONSENTINEL_RELEASE_ROOT="$UNTRACKED_PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
 
 TAGGED_PRECHECK_REPO="$TMP_DIR/preflight-repo-tagged"
 create_preflight_repo "$TAGGED_PRECHECK_REPO"
 expect_failure "Resolved release version does not match pushed tag" \
-  env AEGIS_RELEASE_ROOT="$TAGGED_PRECHECK_REPO" GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v9.9.9 \
+  env IRONSENTINEL_RELEASE_ROOT="$TAGGED_PRECHECK_REPO" GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v9.9.9 \
   /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
 
-expect_failure "AEGIS_RELEASE_PRIVATE_KEY_B64 is required" \
-  env AEGIS_RELEASE_ROOT="$PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-signing
+expect_failure "IRONSENTINEL_RELEASE_PRIVATE_KEY_B64 is required" \
+  env IRONSENTINEL_RELEASE_ROOT="$PRECHECK_REPO" /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke --require-signing
 
 expect_failure "GITHUB_RUN_ID is required" \
-  env -u GITHUB_RUN_ID AEGIS_RELEASE_ROOT="$PRECHECK_REPO" GITHUB_ACTIONS=true GITHUB_REPOSITORY=batuhanyuksel/security GITHUB_SERVER_URL=https://github.com \
+  env -u GITHUB_RUN_ID IRONSENTINEL_RELEASE_ROOT="$PRECHECK_REPO" GITHUB_ACTIONS=true GITHUB_REPOSITORY=batuhanyuksel/security GITHUB_SERVER_URL=https://github.com \
   /bin/bash "$ROOT/scripts/release_publish_preflight.sh" --version v0.0.0-smoke
 
 echo "[smoke] validating release artifact preflight"

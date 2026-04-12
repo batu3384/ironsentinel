@@ -121,31 +121,8 @@ func (m consoleShellModel) renderMissionSurfaceContent(mission scanMissionModel,
 func (m consoleShellModel) renderDebriefPanel(mission scanMissionModel, width int) string {
 	run := mission.consoleRun()
 	findings := mission.findings
-	executive := fmt.Sprintf("%s • %s", strings.ToUpper(string(run.Status)), strings.ToUpper(m.app.scanPostureLabel(run)))
-	if mission.requiredErr != nil {
-		executive = fmt.Sprintf("%s • %s", executive, strings.ToLower(m.app.catalog.T("runtime_focus_repair")))
-	}
-
-	topFinding := "-"
-	if finding, ok := m.app.nextReviewFinding(findings); ok {
-		topFinding = m.app.hottestFindingLine(finding, 48)
-	}
-
-	cards := [][3]string{
-		{m.app.catalog.T("status"), executive, mission.notice},
-		{m.app.catalog.T("app_label_findings"), fmt.Sprintf("%d", run.Summary.TotalFindings), topFinding},
-		{m.app.catalog.T("scan_phase_verdicts_title"), m.app.consoleDebriefModuleSummary(run), m.app.catalog.T("scan_mc_handoff_title")},
-	}
-	body := []string{
-		renderMissionBox(m.app.catalog.T("scan_debrief_title"), strings.Join(renderFactRows(m.app.tuiTheme(), width,
-			factPair{Label: m.app.catalog.T("status"), Value: executive},
-			factPair{Label: m.app.catalog.T("app_label_findings"), Value: fmt.Sprintf("%d", run.Summary.TotalFindings)},
-			factPair{Label: m.app.catalog.T("scan_phase_verdicts_title"), Value: m.app.consoleDebriefModuleSummary(run)},
-			factPair{Label: m.app.catalog.T("scan_mc_handoff_title"), Value: m.app.consoleDebriefActionSummary(run, findings, mission.requiredErr)},
-		), "\n")),
-		mission.renderMissionCardGrid(cards, width, 3),
-	}
-	return strings.Join(body, "\n\n")
+	lines := append([]string{m.app.catalog.T("app_label_report") + ":"}, m.app.consoleDebriefReportLines(run, findings, mission.requiredErr)...)
+	return renderMissionBox(m.app.catalog.T("scan_debrief_title"), strings.Join(lines, "\n"))
 }
 
 func (m consoleShellModel) consoleMissionFooter(mission scanMissionModel) string {
@@ -164,6 +141,9 @@ func (m consoleShellModel) renderMissionBodyPanel(mission scanMissionModel, widt
 	if maxHeight <= 0 {
 		return ""
 	}
+	if m.stage == consoleStageDebrief && mission.done {
+		return fitRenderedBlock(mission.renderUltraCompactMissionBoard(width), maxHeight)
+	}
 	if mission.height < 28 || maxHeight < 14 {
 		return mission.renderCompactMissionBoard(width, maxHeight)
 	}
@@ -175,10 +155,29 @@ func missionSurfaceSectionHeights(availableBodyHeight, debriefHeight, healthHeig
 		return 0, 0, 0
 	}
 
-	boardMin := minInt(availableBodyHeight, 8)
 	if debriefHeight > 0 {
-		debrief = minInt(debriefHeight, 5)
+		board = minInt(maxInt(3, availableBodyHeight/8), 4)
+		if availableBodyHeight < 16 {
+			board = minInt(availableBodyHeight/4, 3)
+		}
+		if board < 3 {
+			board = minInt(availableBodyHeight, 3)
+		}
+		health = 0
+		debrief = maxInt(0, availableBodyHeight-board-health)
+		if debrief < 12 && board > 3 {
+			shift := minInt(board-3, 12-debrief)
+			board -= shift
+			debrief += shift
+		}
+		if debriefHeight < debrief {
+			debrief = debriefHeight
+			board = maxInt(1, availableBodyHeight-debrief-health)
+		}
+		return board, debrief, health
 	}
+
+	boardMin := minInt(availableBodyHeight, 8)
 	if healthHeight > 0 {
 		health = minInt(healthHeight, 3)
 	}

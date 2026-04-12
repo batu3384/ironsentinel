@@ -28,15 +28,15 @@ func TestBuildSandboxEnvStripsSecrets(t *testing.T) {
 	if slices.Contains(keys, "AWS_SECRET_ACCESS_KEY") {
 		t.Fatalf("sandbox env should strip AWS_SECRET_ACCESS_KEY")
 	}
-	if !slices.Contains(keys, "AEGIS_SCAN_MODE") {
-		t.Fatalf("sandbox env should include AEGIS_SCAN_MODE")
+	if !slices.Contains(keys, "IRONSENTINEL_SCAN_MODE") {
+		t.Fatalf("sandbox env should include IRONSENTINEL_SCAN_MODE")
 	}
 
 	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "AEGIS_ALLOW_BUILD=false") {
+	if !strings.Contains(joined, "IRONSENTINEL_ALLOW_BUILD=false") {
 		t.Fatalf("sandbox env should record allow-build flag")
 	}
-	if !strings.Contains(joined, "AEGIS_ALLOW_NETWORK=false") {
+	if !strings.Contains(joined, "IRONSENTINEL_ALLOW_NETWORK=false") {
 		t.Fatalf("sandbox env should record allow-network flag")
 	}
 }

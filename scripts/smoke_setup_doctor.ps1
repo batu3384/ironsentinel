@@ -8,7 +8,7 @@ try {
     $env:APPSEC_DATA_DIR = Join-Path $tmpDir "data"
     $env:APPSEC_OUTPUT_DIR = Join-Path $tmpDir "output"
     $env:APPSEC_MIRROR_DIR = Join-Path $tmpDir "mirrors"
-    $env:AEGIS_TOOLS_DIR = Join-Path $tmpDir "tools\bin"
+    $env:IRONSENTINEL_TOOLS_DIR = Join-Path $tmpDir "tools\bin"
 
     Write-Host "[smoke] isolated runtime root: $tmpDir"
     Write-Host "[smoke] running core setup"

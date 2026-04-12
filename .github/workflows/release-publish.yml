@@ -32,7 +32,7 @@ jobs:
           fi
       - name: Package signed release artifacts
         env:
-          AEGIS_RELEASE_PRIVATE_KEY_B64: ${{ secrets.AEGIS_RELEASE_PRIVATE_KEY_B64 }}
+          IRONSENTINEL_RELEASE_PRIVATE_KEY_B64: ${{ secrets.IRONSENTINEL_RELEASE_PRIVATE_KEY_B64 }}
         run: |
           bash scripts/release_publish_preflight.sh --version "${{ steps.version.outputs.value }}" --require-signing --require-tag
           bash scripts/package_release.sh --version "${{ steps.version.outputs.value }}" --sign

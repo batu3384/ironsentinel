@@ -535,11 +535,11 @@ func (a *App) runImageBuild(engine, image, platform string, push bool) error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	command.Env = append(os.Environ(),
-		"AEGIS_CONTAINER_ENGINE="+engine,
-		"AEGIS_CONTAINER_IMAGE="+image,
-		"AEGIS_CONTAINER_PLATFORM="+platform,
+		"IRONSENTINEL_CONTAINER_ENGINE="+engine,
+		"IRONSENTINEL_CONTAINER_IMAGE="+image,
+		"IRONSENTINEL_CONTAINER_PLATFORM="+platform,
 		"APPSEC_CONTAINERFILE_PATH="+a.cfg.ContainerfilePath,
-		"AEGIS_TOOLS_DIR="+a.cfg.ToolsDir,
+		"IRONSENTINEL_TOOLS_DIR="+a.cfg.ToolsDir,
 	)
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("%s", a.catalog.T("runtime_image_build_failed", err.Error()))
@@ -556,7 +556,7 @@ func (a *App) runInstallBundle(mode string) error {
 	command.Dir = filepath.Dir(a.cfg.InstallScript)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
-	command.Env = append(os.Environ(), "AEGIS_TOOLS_DIR="+a.cfg.ToolsDir)
+	command.Env = append(os.Environ(), "IRONSENTINEL_TOOLS_DIR="+a.cfg.ToolsDir)
 	return command.Run()
 }
 
@@ -1179,6 +1179,7 @@ func (a *App) scanCommand() *cobra.Command {
 				AllowNetwork:     allowNetwork,
 				DASTTargets:      targets,
 				DASTAuthProfiles: authProfiles,
+				BestEffort:       !strictVersions && !requireBundle && !cmd.Flags().Changed("module"),
 			}
 
 			profile = a.applyCompliancePreset(project, profile,
@@ -2985,6 +2986,7 @@ func (a *App) quickScanProfile(project domain.Project) domain.ScanProfile {
 		Isolation:    domain.IsolationMode(a.cfg.SandboxMode),
 		Coverage:     domain.CoveragePremium,
 		SeverityGate: domain.SeverityHigh,
+		BestEffort:   true,
 	}
 	profile.Modules = a.resolveModulesForProject(project, profile)
 	return profile
@@ -3059,7 +3061,7 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 	previousVerbose := a.streamVerbose
 	previousMissionControl := a.streamMissionControl
 	a.streamMissionControl = a.isInteractiveTerminal()
-	a.streamVerbose = !a.streamMissionControl
+	a.streamVerbose = !a.streamMissionControl && !a.shellSafeSurfaceOutput()
 	defer func() {
 		a.streamVerbose = previousVerbose
 		a.streamMissionControl = previousMissionControl
@@ -3076,11 +3078,11 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 			}
 			return outcome.scanErr
 		}
-		if outcome.requiredErr != nil {
+		if scanErr := a.requiredScanError(profile, outcome.requiredErr); scanErr != nil {
 			if actionErr := a.handleScanMissionAction(outcome); actionErr != nil {
 				return actionErr
 			}
-			return outcome.requiredErr
+			return scanErr
 		}
 		if failOnNew != "" {
 			if err := a.runRegressionGate(outcome.run.ID, baselineRunID, failOnNew); err != nil {
@@ -3095,14 +3097,19 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 		return a.handleScanMissionAction(outcome)
 	}
 
-	pterm.DefaultHeader.Println(a.catalog.T("scan_title"))
-	_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
-		{
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), project.DisplayName, a.catalog.T("scan_target"), project.LocationHint)},
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(profile.Mode), a.catalog.T("scan_gate"), a.severityLabel(profile.SeverityGate), a.catalog.T("runtime_preferred_mode"), strings.ToUpper(string(profile.Isolation)))},
-			{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_modules"), a.moduleCount(profile.Modules), a.catalog.T("lang_current"), strings.ToUpper(string(a.lang)))},
-		},
-	}).Render()
+	if a.shellSafeSurfaceOutput() {
+		fmt.Print(a.renderPlainScanLaunchSummary(project, profile))
+	} else {
+		pterm.DefaultHeader.Println(a.catalog.T("scan_title"))
+		pterm.Println()
+		_ = pterm.DefaultPanel.WithPanels(pterm.Panels{
+			{
+				{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("title"), project.DisplayName, a.catalog.T("scan_target"), project.LocationHint)},
+				{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mode"), a.modeLabel(profile.Mode), a.catalog.T("scan_gate"), a.severityLabel(profile.SeverityGate), a.catalog.T("runtime_preferred_mode"), a.displayUpper(a.isolationModeLabel(profile.Isolation)))},
+				{Data: a.ptermSprintf("%s\n[cyan]%d[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_modules"), a.moduleCount(profile.Modules), a.catalog.T("lang_current"), strings.ToUpper(string(a.lang)))},
+			},
+		}).Render()
+	}
 
 	tracker := a.startLiveScanTracker(project, profile)
 	missionControl := a.newLiveScanConsole(project, profile)
@@ -3125,6 +3132,7 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 	if a.streamMissionControl {
 		a.renderMissionDebrief(project, run, findings, requiredErr)
 	} else {
+		pterm.Println()
 		a.renderRunSummary(run, &project, findings)
 		if !a.shellSafeSurfaceOutput() {
 			a.renderModules(run.ModuleResults)
@@ -3139,8 +3147,12 @@ func (a *App) executeScan(ctx context.Context, project domain.Project, profile d
 		if err := a.handlePostScanFollowUp(run, findings, requiredErr); err != nil {
 			return err
 		}
-		pterm.Error.Printf("%s: %v\n", a.catalog.T("scan_failed"), requiredErr)
-		return requiredErr
+		if scanErr := a.requiredScanError(profile, requiredErr); scanErr != nil {
+			pterm.Error.Printf("%s: %v\n", a.catalog.T("scan_failed"), scanErr)
+			return scanErr
+		}
+		pterm.Warning.Printf("%s: %v\n", a.catalog.T("scan_outcome_partial"), requiredErr)
+		return nil
 	}
 	if failOnNew != "" {
 		pterm.Println()
@@ -3581,6 +3593,9 @@ func (a *App) resolveModulesForProject(project domain.Project, profile domain.Sc
 }
 
 func (a *App) enforceRequiredRuntime(project domain.Project, profile domain.ScanProfile, strictVersions, render bool) error {
+	if profile.BestEffort && !strictVersions {
+		return nil
+	}
 	runtime := a.service.Runtime()
 	requested := profile.Isolation
 	if requested == "" {
@@ -3599,6 +3614,13 @@ func (a *App) enforceRequiredRuntime(project domain.Project, profile domain.Scan
 		return fmt.Errorf("%s: %s", a.catalog.T("required_modules_failed", len(requiredRuntimeModules)), strings.Join(requiredRuntimeModules, ", "))
 	}
 	return nil
+}
+
+func (a *App) requiredScanError(profile domain.ScanProfile, requiredErr error) error {
+	if requiredErr == nil || profile.BestEffort {
+		return nil
+	}
+	return requiredErr
 }
 
 func (a *App) enforceRequiredModuleResults(run domain.ScanRun, requiredModules []string) error {
@@ -3758,7 +3780,7 @@ func (a *App) colorDisabled() bool {
 }
 
 func (a *App) reducedMotion() bool {
-	for _, key := range []string{"IRONSENTINEL_REDUCED_MOTION", "AEGIS_REDUCED_MOTION"} {
+	for _, key := range []string{"IRONSENTINEL_REDUCED_MOTION"} {
 		if truthyEnv(os.Getenv(key)) {
 			return true
 		}

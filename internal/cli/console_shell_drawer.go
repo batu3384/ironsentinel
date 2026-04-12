@@ -34,7 +34,7 @@ func (m consoleShellModel) renderDrawerPanel(width int) string {
 	theme := m.app.tuiTheme()
 	sectionWidth := maxInt(18, width-6)
 	sections := []string{
-		theme.eyebrowStyle().Render(strings.ToUpper(m.app.catalog.T("show_details"))),
+		theme.eyebrowStyle().Render(m.app.displayUpper(m.app.catalog.T("show_details"))),
 		theme.titleStyle().Render(m.drawerTitle()),
 		theme.mutedStyle().Render(m.drawerHint()),
 	}
@@ -71,7 +71,7 @@ func (m consoleShellModel) findingsDrawerSections(width int) []string {
 	run := m.mission.run
 	overview := []string{
 		fmt.Sprintf("%s: %d", m.app.catalog.T("app_label_findings"), run.Summary.TotalFindings),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), strings.ToUpper(m.app.scanPostureLabel(run))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), m.app.displayUpper(m.app.scanPostureLabel(run))),
 		m.app.findingTriageSummary(findings),
 	}
 	if top, ok := m.app.nextReviewFinding(findings); ok {
@@ -104,10 +104,10 @@ func (m consoleShellModel) runtimeDrawerSections(width int) []string {
 	}
 	health := []string{
 		fmt.Sprintf("%s %d • %s %d • %s %d • %s %d",
-			strings.ToLower(string(domain.RuntimeCheckPass)), pass,
-			strings.ToLower(string(domain.RuntimeCheckWarn)), warn,
-			strings.ToLower(string(domain.RuntimeCheckFail)), fail,
-			strings.ToLower(string(domain.RuntimeCheckSkip)), skip,
+			strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckPass)), pass,
+			strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckWarn)), warn,
+			strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckFail)), fail,
+			strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckSkip)), skip,
 		),
 		m.app.summarizeDoctorIssues(doctor, 3),
 	}
@@ -122,16 +122,16 @@ func (m consoleShellModel) runDrawerSections(width int) []string {
 	run := m.mission.run
 	overview := []string{
 		fmt.Sprintf("%s: %s", m.app.catalog.T("run_id"), coalesceString(run.ID, "-")),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode"), strings.ToUpper(m.app.modeLabel(run.Profile.Mode))),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("coverage_profile"), strings.ToUpper(m.app.coverageLabel(run.Profile.Coverage))),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), strings.ToUpper(string(run.Status))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode"), m.app.displayUpper(m.app.modeLabel(run.Profile.Mode))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("coverage_profile"), m.app.displayUpper(m.app.coverageLabel(run.Profile.Coverage))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), m.app.displayUpper(m.app.scanStatusLabel(run.Status))),
 	}
 	moduleLines := []string{
 		m.app.consoleDebriefModuleSummary(run),
 		fmt.Sprintf("%s: %d", m.app.catalog.T("app_label_findings"), run.Summary.TotalFindings),
 	}
 	for _, module := range limitModuleResults(run.ModuleResults, 3) {
-		moduleLines = append(moduleLines, fmt.Sprintf("%s • %s", strings.ToUpper(module.Name), strings.ToUpper(string(module.Status))))
+		moduleLines = append(moduleLines, fmt.Sprintf("%s • %s", m.app.technicalUpper(module.Name), m.app.displayUpper(m.app.moduleStatusLabel(module.Status))))
 	}
 
 	return []string{
@@ -172,13 +172,13 @@ func (m consoleShellModel) runtimeDrawerSummary(doctor domain.RuntimeDoctor) str
 	return fmt.Sprintf(
 		"%d %s • %d %s • %d %s • %d %s",
 		pass,
-		strings.ToLower(string(domain.RuntimeCheckPass)),
+		strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckPass)),
 		warn,
-		strings.ToLower(string(domain.RuntimeCheckWarn)),
+		strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckWarn)),
 		fail,
-		strings.ToLower(string(domain.RuntimeCheckFail)),
+		strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckFail)),
 		skip,
-		strings.ToLower(string(domain.RuntimeCheckSkip)),
+		strings.ToLower(m.app.runtimeCheckStatusText(domain.RuntimeCheckSkip)),
 	)
 }
 

@@ -112,8 +112,8 @@ HOST_PLATFORM="$(go env GOOS)/$(go env GOARCH)"
 WORKFLOW_NAME="${GITHUB_WORKFLOW:-}"
 RUN_ID="${GITHUB_RUN_ID:-}"
 RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-}"
-EXTERNAL_PROVIDER="${AEGIS_EXTERNAL_ATTESTATION_PROVIDER:-}"
-EXTERNAL_SOURCE_URI="${AEGIS_EXTERNAL_ATTESTATION_SOURCE_URI:-}"
+EXTERNAL_PROVIDER="${IRONSENTINEL_EXTERNAL_ATTESTATION_PROVIDER:-}"
+EXTERNAL_SOURCE_URI="${IRONSENTINEL_EXTERNAL_ATTESTATION_SOURCE_URI:-}"
 if [[ -z "$EXTERNAL_PROVIDER" && -n "${GITHUB_ACTIONS:-}" ]]; then
   EXTERNAL_PROVIDER="github-actions"
 fi
@@ -166,11 +166,11 @@ if [[ $SOURCE_DIRTY -eq 1 ]]; then
   manifest_args+=(--source-dirty)
 fi
 if [[ $SIGN -eq 1 ]]; then
-  if [[ -z "${AEGIS_RELEASE_PRIVATE_KEY_B64:-}" ]]; then
-    echo "AEGIS_RELEASE_PRIVATE_KEY_B64 is required when --sign is set" >&2
+  if [[ -z "${IRONSENTINEL_RELEASE_PRIVATE_KEY_B64:-}" ]]; then
+    echo "IRONSENTINEL_RELEASE_PRIVATE_KEY_B64 is required when --sign is set" >&2
     exit 1
   fi
-  manifest_args+=(--private-key-env AEGIS_RELEASE_PRIVATE_KEY_B64)
+  manifest_args+=(--private-key-env IRONSENTINEL_RELEASE_PRIVATE_KEY_B64)
 fi
 
 (

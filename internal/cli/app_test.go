@@ -533,6 +533,64 @@ func TestRenderQueueHeadlineFromSnapshotUsesSnapshotProjectLabels(t *testing.T) 
 	}
 }
 
+func TestOverviewPlainReportTurkishLocalizesHeadlineAndDeduplicatesHotFindings(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	snapshot := portfolioSnapshot{
+		Projects:     []domain.Project{project},
+		ProjectsByID: map[string]domain.Project{project.ID: project},
+		Runs: []domain.ScanRun{
+			{ID: "run-1", ProjectID: project.ID, Status: domain.ScanRunning, StartedAt: time.Unix(1_763_000_000, 0).UTC()},
+		},
+		Findings: []domain.Finding{
+			{Fingerprint: "fp-1", Severity: domain.SeverityCritical, Priority: 5.5, Title: "Potential GitHub personal access token"},
+			{Fingerprint: "fp-2", Severity: domain.SeverityCritical, Priority: 5.4, Title: "Potential GitHub personal access token"},
+			{Fingerprint: "fp-3", Severity: domain.SeverityHigh, Priority: 4.8, Title: "Reachable supply-chain issue"},
+		},
+	}
+
+	report := app.overviewPlainReport(snapshot)
+	if strings.Contains(report, "RUNNING") {
+		t.Fatalf("expected Turkish overview to avoid raw RUNNING token\n%s", report)
+	}
+	if !strings.Contains(report, "ÇALIŞIYOR") {
+		t.Fatalf("expected Turkish overview to localize recent run status\n%s", report)
+	}
+	if count := strings.Count(report, "Potential GitHub personal access token"); count != 1 {
+		t.Fatalf("expected duplicated hot findings to be compacted, saw %d copies\n%s", count, report)
+	}
+}
+
+func TestRuntimePlainReportTurkishAvoidsRawTokensAndPluralStatusLeaks(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	runtime := app.runtimeStatus(false)
+	runtime.Daemon = domain.RuntimeDaemon{}
+	runtime.Isolation.EffectiveMode = domain.IsolationLocal
+	runtime.Isolation.Rootless = false
+	runtime.ScannerBundle = []domain.RuntimeTool{
+		{Name: "trivy", Available: true, Healthy: true, ActualVersion: "0.69.4", Path: "/opt/homebrew/bin/trivy"},
+		{Name: "syft", Available: true, Healthy: false, ActualVersion: "1.42.2", Path: "/opt/homebrew/bin/syft"},
+		{Name: "semgrep", Available: false, ExpectedVersion: "1.119.0"},
+	}
+
+	report := app.runtimePlainReport(runtime)
+	for _, forbidden := range []string{"Bosta", "LOCAL", ": false", "semgrep | Eksik tarayıcılar |", "trivy | Mevcut tarayıcılar |"} {
+		if strings.Contains(report, forbidden) {
+			t.Fatalf("expected Turkish runtime report to avoid raw token %q\n%s", forbidden, report)
+		}
+	}
+	for _, expected := range []string{"Boşta", "YEREL", "Hayır", "semgrep | EKSİK |", "trivy | HAZIR |"} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("expected Turkish runtime report to include %q\n%s", expected, report)
+		}
+	}
+}
+
 func TestFindingsViewSourceUsesSnapshotForRunAndPortfolio(t *testing.T) {
 	app, run, _, _ := newFocusedRunFilterFixture(t)
 	snapshot := app.buildPortfolioSnapshot()
@@ -1477,6 +1535,9 @@ func TestQuickScanProfileUsesSimpleSafeDefaults(t *testing.T) {
 	if profile.Isolation != domain.IsolationAuto {
 		t.Fatalf("expected auto isolation, got %s", profile.Isolation)
 	}
+	if !profile.BestEffort {
+		t.Fatalf("expected quick scan profile to run in best-effort mode")
+	}
 	if len(profile.Modules) == 0 {
 		t.Fatalf("expected quick scan to resolve modules")
 	}
@@ -1491,6 +1552,50 @@ func TestQuickScanProfileUsesSimpleSafeDefaults(t *testing.T) {
 		if !found {
 			t.Fatalf("expected quick scan profile to include %s", required)
 		}
+	}
+}
+
+func TestEnforceRequiredRuntimeAllowsBestEffortProfiles(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.runtimeDoctorFn = func(profile domain.ScanProfile, strictVersions, requireIntegrity bool) domain.RuntimeDoctor {
+		return domain.RuntimeDoctor{
+			Mode:             profile.Mode,
+			StrictVersions:   strictVersions,
+			RequireIntegrity: requireIntegrity,
+			Ready:            false,
+			Missing:          []domain.RuntimeTool{{Name: "semgrep"}},
+		}
+	}
+
+	profile := domain.ScanProfile{
+		Mode:       domain.ModeSafe,
+		Coverage:   domain.CoveragePremium,
+		Isolation:  domain.IsolationLocal,
+		Modules:    []string{"semgrep"},
+		BestEffort: true,
+	}
+	if err := app.enforceRequiredRuntime(project, profile, false, false); err != nil {
+		t.Fatalf("expected best-effort profile to skip runtime blocking, got %v", err)
+	}
+
+	profile.BestEffort = false
+	if err := app.enforceRequiredRuntime(project, profile, false, false); err == nil {
+		t.Fatalf("expected strict profile to block on missing runtime support")
+	}
+}
+
+func TestRequiredScanErrorIsSoftenedForBestEffortProfiles(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	requiredErr := fmt.Errorf("partial")
+
+	if err := app.requiredScanError(domain.ScanProfile{BestEffort: true}, requiredErr); err != nil {
+		t.Fatalf("expected best-effort required error to stay non-fatal, got %v", err)
+	}
+	if err := app.requiredScanError(domain.ScanProfile{}, requiredErr); err == nil {
+		t.Fatalf("expected strict profile to keep required error fatal")
+	}
+	if err := app.requiredScanError(domain.ScanProfile{BestEffort: true}, nil); err != nil {
+		t.Fatalf("expected nil required error to stay nil, got %v", err)
 	}
 }
 
@@ -1667,6 +1772,49 @@ func TestScanDebriefActionLinesReflectOutcome(t *testing.T) {
 	lines = app.scanDebriefActionLines(run, nil, fmt.Errorf("partial"))
 	if len(lines) == 0 || !strings.Contains(strings.Join(lines, "\n"), "runtime doctor") {
 		t.Fatalf("expected runtime-doctor debrief actions, got %v", lines)
+	}
+}
+
+func TestConsoleDebriefReportLinesBuildActionableFixPlan(t *testing.T) {
+	app := &App{
+		lang:    i18n.EN,
+		catalog: i18n.New(i18n.EN),
+	}
+	run := domain.ScanRun{
+		ID:     "run-22",
+		Status: domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings: 2,
+			CountsBySeverity: map[domain.Severity]int{
+				domain.SeverityCritical: 1,
+				domain.SeverityHigh:     1,
+			},
+		},
+		ModuleResults: []domain.ModuleResult{
+			{Name: "semgrep", Status: domain.ModuleCompleted, Summary: "Semantic rules completed.", FindingCount: 1},
+			{Name: "gitleaks", Status: domain.ModuleFailed, Summary: "Binary is missing from the runtime path."},
+			{Name: "trivy", Status: domain.ModuleSkipped, Summary: "Supply-chain lane deferred."},
+		},
+	}
+	findings := []domain.Finding{
+		{Fingerprint: "fp-critical", Severity: domain.SeverityCritical, Title: "Deploy token is committed", Module: "gitleaks"},
+		{Fingerprint: "fp-high", Severity: domain.SeverityHigh, Title: "Unsafe eval path remains reachable", Module: "semgrep"},
+	}
+
+	lines := app.consoleDebriefReportLines(run, findings, fmt.Errorf("partial"))
+	report := strings.Join(lines, "\n")
+	for _, fragment := range []string{
+		app.catalog.T("scan_outcome_title"),
+		app.catalog.T("scan_report_blockers_title"),
+		app.catalog.T("scan_report_fix_plan_title"),
+		app.catalog.T("scan_report_first_step_title"),
+		app.catalog.T("scan_spotlight_title"),
+		"Deploy token is committed",
+		"GITLEAKS",
+	} {
+		if !strings.Contains(report, fragment) {
+			t.Fatalf("expected debrief report to contain %q, got %q", fragment, report)
+		}
 	}
 }
 

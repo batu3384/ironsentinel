@@ -90,7 +90,7 @@ CI wiring lives in [`.github/workflows/release-validation.yml`](/Users/batuhanyu
 
 For local parity, use [scripts/quality_local.sh](/Users/batuhanyuksel/Documents/security/scripts/quality_local.sh).
 
-Signed publication lives in [`.github/workflows/release-publish.yml`](/Users/batuhanyuksel/Documents/security/.github/workflows/release-publish.yml). It requires the `AEGIS_RELEASE_PRIVATE_KEY_B64` secret and publishes the signed release bundle to GitHub Releases.
+Signed publication lives in [`.github/workflows/release-publish.yml`](/Users/batuhanyuksel/Documents/security/.github/workflows/release-publish.yml). It requires the `IRONSENTINEL_RELEASE_PRIVATE_KEY_B64` secret and publishes the signed release bundle to GitHub Releases.
 
 ## Packaging Rule
 

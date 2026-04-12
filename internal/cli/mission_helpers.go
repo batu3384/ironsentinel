@@ -160,7 +160,7 @@ func (a *App) renderQueueHeadlineWithProjectLabel(runs []domain.ScanRun, project
 	}
 	lines := make([]string, 0, len(active))
 	for _, run := range active {
-		lines = append(lines, fmt.Sprintf("%s | %s | %s", run.ID, strings.ToUpper(string(run.Status)), projectLabel(run.ProjectID)))
+		lines = append(lines, fmt.Sprintf("%s | %s | %s", run.ID, a.displayUpper(a.scanStatusLabel(run.Status)), projectLabel(run.ProjectID)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -525,8 +525,34 @@ func (a *App) findingOwnershipSummary(finding domain.Finding) string {
 }
 
 func (a *App) hottestFindingLine(finding domain.Finding, width int) string {
-	title := trimForSelect(finding.Title, width)
+	title := trimForSelect(a.displayFindingTitle(finding), width)
 	return fmt.Sprintf("%s | %s | %s", a.severityLabel(finding.Severity), a.findingPriorityLabel(finding), title)
+}
+
+func (a *App) hotFindingSummary(findings []domain.Finding, limit, width int) string {
+	if len(findings) == 0 {
+		return a.catalog.T("overview_no_findings")
+	}
+	lines := make([]string, 0, limit)
+	seen := map[string]struct{}{}
+	for _, finding := range a.prioritizedFindings(findings, 0) {
+		key := strings.ToLower(strings.TrimSpace(finding.Title))
+		if key == "" {
+			key = strings.ToLower(strings.TrimSpace(finding.Fingerprint))
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		lines = append(lines, a.hottestFindingLine(finding, width))
+		if limit > 0 && len(lines) >= limit {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return a.catalog.T("overview_no_findings")
+	}
+	return strings.Join(lines, " || ")
 }
 
 func (a *App) findingTriageSummary(findings []domain.Finding) string {

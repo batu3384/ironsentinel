@@ -14,14 +14,14 @@ import (
 
 func (a *App) phaseLabel() string {
 	if a.lang == i18n.TR {
-		return "Asama"
+		return "Aşama"
 	}
 	return "Phase"
 }
 
 func (a *App) toolLabel() string {
 	if a.lang == i18n.TR {
-		return "Arac"
+		return "Araç"
 	}
 	return "Tool"
 }
@@ -29,12 +29,12 @@ func (a *App) toolLabel() string {
 func (a *App) consoleMissionSubtitle(done bool) string {
 	if done {
 		if a.lang == i18n.TR {
-			return "Gorev tamamlandi. Bu yuzey yalnizca gorev durumu ve kanit ozetini gosteriyor."
+			return "Görev tamamlandı. Bu yüzey yalnızca görev durumu ve kanıt özetini gösteriyor."
 		}
 		return "Mission complete. This surface remains focused on mission status and evidence summary."
 	}
 	if a.lang == i18n.TR {
-		return "Canli tarama durumu, risk ve bulgular bu yuzeyde akiyor."
+		return "Canlı tarama durumu, risk ve bulgular bu yüzeyde akıyor."
 	}
 	return "Live scan status, risk, and findings are flowing on this surface."
 }
@@ -43,27 +43,27 @@ func (a *App) consoleMissionDoneNotice(status domain.ScanStatus, requiredErr err
 	switch {
 	case status == domain.ScanFailed:
 		if a.lang == i18n.TR {
-			return "Gorev basarisiz sonlandi. Kanit ozeti bu yuzeyde korunuyor."
+			return "Görev başarısız sonlandı. Kanıt özeti bu yüzeyde korunuyor."
 		}
 		return "Mission failed. Evidence summary remains on this surface."
 	case status == domain.ScanCanceled:
 		if a.lang == i18n.TR {
-			return "Gorev iptal edildi. Toplanan kanit ozeti bu yuzeyde korunuyor."
+			return "Görev iptal edildi. Toplanan kanıt özeti bu yüzeyde korunuyor."
 		}
 		return "Mission canceled. Collected evidence summary remains on this surface."
 	case requiredErr != nil:
 		if a.lang == i18n.TR {
-			return "Gorev tamamlandi. Zorunlu kapsama kontrolleri eksik oldugu icin kosu kismi kabul edilmeli."
+			return "Görev tamamlandı. Zorunlu kapsama kontrolleri eksik olduğu için koşu kısmi kabul edilmeli."
 		}
 		return "Mission complete. Required coverage checks were incomplete, so treat this run as partial."
 	case findingCount > 0:
 		if a.lang == i18n.TR {
-			return "Gorev tamamlandi. Bulgular ve kanit ozeti bu yuzeyde korunuyor."
+			return "Görev tamamlandı. Bulgular ve kanıt özeti bu yüzeyde korunuyor."
 		}
 		return "Mission complete. Findings and evidence summary remain on this surface."
 	default:
 		if a.lang == i18n.TR {
-			return "Gorev tamamlandi. Bu kosuda dogrulanmis bulgu uretilmedi."
+			return "Görev tamamlandı. Bu koşuda doğrulanmış bulgu üretilmedi."
 		}
 		return "Mission complete. No confirmed findings were raised in this run."
 	}
@@ -73,17 +73,17 @@ func (a *App) consoleMissionFooter(done, aborting bool) string {
 	switch {
 	case !done && aborting:
 		if a.lang == i18n.TR {
-			return "iptal gonderildi, ajan temiz bicimde durduruluyor"
+			return "iptal gönderildi, ajan temiz biçimde durduruluyor"
 		}
 		return "cancel requested, waiting for the agent to stop cleanly"
 	case !done:
 		if a.lang == i18n.TR {
-			return "q iptal istegi gonder"
+			return "q iptal isteği gönder"
 		}
 		return "q request cancel"
 	default:
 		if a.lang == i18n.TR {
-			return "q gorevi kapat"
+			return "q görevi kapat"
 		}
 		return "q close mission"
 	}
@@ -511,13 +511,134 @@ func (a *App) moduleNarrative(module string) string {
 	}
 }
 
+func (a *App) phaseDisplayText(phase, module string) string {
+	if strings.TrimSpace(module) != "" {
+		return a.modulePhaseLabel(module)
+	}
+	switch strings.TrimSpace(phase) {
+	case "", "-":
+		return a.catalog.T("scan_phase_general")
+	case "Attack surface and repository exposure mapping", "Saldırı yüzeyi ve depo maruziyeti haritası":
+		return a.catalog.T("scan_phase_attack_surface")
+	case "Secret exposure and credential leakage", "Gizli bilgi ve kimlik bilgisi sızıntısı":
+		return a.catalog.T("scan_phase_secrets")
+	case "Malware and suspicious payload inspection", "Zararlı yazılım ve şüpheli yük incelemesi":
+		return a.catalog.T("scan_phase_malware")
+	case "Code security and semantic analysis", "Kod güvenliği ve semantik analiz", "Code analysis":
+		return a.catalog.T("scan_phase_code")
+	case "Dependency, SBOM, and supply-chain review", "Bağımlılık, SBOM ve tedarik zinciri incelemesi":
+		return a.catalog.T("scan_phase_supply_chain")
+	case "Dynamic probing and web attack simulation", "Dinamik yoklama ve web saldırı simülasyonu":
+		return a.catalog.T("scan_phase_dynamic")
+	case "General repository analysis", "Genel depo analizi":
+		return a.catalog.T("scan_phase_general")
+	default:
+		return strings.TrimSpace(phase)
+	}
+}
+
+func (a *App) operatorText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+	switch trimmed {
+	case "Mission completed. Evidence cards and handoff are ready.", "Görev tamamlandı. Kanıt kartları ve operatör devri hazır.":
+		if a.lang == i18n.TR {
+			return "Görev tamamlandı. Kanıt kartları ve operatör devri hazır."
+		}
+		return "Mission completed. Evidence cards and handoff are ready."
+	case "Queued semantic analysis lane.", "Semantik analiz hattı kuyruğa alındı.":
+		if a.lang == i18n.TR {
+			return "Semantik analiz hattı kuyruğa alındı."
+		}
+		return "Queued semantic analysis lane."
+	case "Correlated the source graph and dependency edges.", "Kaynak grafı ve bağımlılık kenarları ilişkilendirildi.":
+		if a.lang == i18n.TR {
+			return "Kaynak grafı ve bağımlılık kenarları ilişkilendirildi."
+		}
+		return "Correlated the source graph and dependency edges."
+	case "Closed the mission with exportable evidence.", "Görev dışa aktarılabilir kanıtla kapatıldı.":
+		if a.lang == i18n.TR {
+			return "Görev dışa aktarılabilir kanıtla kapatıldı."
+		}
+		return "Closed the mission with exportable evidence."
+	case "Enumerated the repository attack surface.", "Depo saldırı yüzeyi envanteri çıkarıldı.":
+		if a.lang == i18n.TR {
+			return "Depo saldırı yüzeyi envanteri çıkarıldı."
+		}
+		return "Enumerated the repository attack surface."
+	case "Mapped repository exposure.", "Depo maruziyeti haritalandı.":
+		if a.lang == i18n.TR {
+			return "Depo maruziyeti haritalandı."
+		}
+		return "Mapped repository exposure."
+	case "Correlated semantic rules across the source graph.", "Semantik kurallar kaynak grafı boyunca ilişkilendirildi.":
+		if a.lang == i18n.TR {
+			return "Semantik kurallar kaynak grafı boyunca ilişkilendirildi."
+		}
+		return "Correlated semantic rules across the source graph."
+	case "Correlating semantic rules.", "Semantik kurallar ilişkilendiriliyor.":
+		if a.lang == i18n.TR {
+			return "Semantik kurallar ilişkilendiriliyor."
+		}
+		return "Correlating semantic rules."
+	case "Queued for secret validation.", "Gizli doğrulaması için kuyruğa alındı.":
+		if a.lang == i18n.TR {
+			return "Gizli doğrulaması için kuyruğa alındı."
+		}
+		return "Queued for secret validation."
+	case "Secret validation surfaced a blocking credential exposure.", "Gizli doğrulaması engelleyici bir kimlik bilgisi sızıntısı buldu.":
+		if a.lang == i18n.TR {
+			return "Gizli doğrulaması engelleyici bir kimlik bilgisi sızıntısı buldu."
+		}
+		return "Secret validation surfaced a blocking credential exposure."
+	case "Execution failed.", "Yürütme başarısız oldu.":
+		if a.lang == i18n.TR {
+			return "Yürütme başarısız oldu."
+		}
+		return "Execution failed."
+	case "Done", "Tamamlandı":
+		if a.lang == i18n.TR {
+			return "Tamamlandı"
+		}
+		return "Done"
+	case "Running", "Çalışıyor":
+		if a.lang == i18n.TR {
+			return "Çalışıyor"
+		}
+		return "Running"
+	case "Surface mapped.", "Yüzey haritalandı.":
+		if a.lang == i18n.TR {
+			return "Yüzey haritalandı."
+		}
+		return "Surface mapped."
+	case "Auditing scripts.", "Betikler denetleniyor.":
+		if a.lang == i18n.TR {
+			return "Betikler denetleniyor."
+		}
+		return "Auditing scripts."
+	case "Queued.", "Kuyrukta.":
+		if a.lang == i18n.TR {
+			return "Kuyrukta."
+		}
+		return "Queued."
+	default:
+		return trimmed
+	}
+}
+
+func (a *App) moduleSummaryText(module domain.ModuleResult) string {
+	return a.operatorText(coalesceString(module.Summary, a.moduleNarrative(module.Name)))
+}
+
 func (a *App) moduleToolLabel(module string) string {
 	switch strings.TrimSpace(module) {
 	case "", "-":
 		return "-"
 	case "stack-detector", "surface-inventory", "script-audit", "dependency-confusion", "runtime-config-audit", "binary-entropy", "secret-heuristics", "malware-signature":
 		if a.lang == i18n.TR {
-			return "yerlesik analiz"
+			return "yerleşik analiz"
 		}
 		return "built-in analyzer"
 	case "trivy-image":
@@ -724,6 +845,38 @@ func (a *App) scanProgressBar(done, total int) string {
 		filled = width
 	}
 	return "[" + strings.Repeat("=", filled) + strings.Repeat(".", width-filled) + "]"
+}
+
+func (a *App) scanProgressRail(done, total, width int) string {
+	total = max(1, total)
+	done = min(done, total)
+	if done < 0 {
+		done = 0
+	}
+	if width < 10 {
+		width = 10
+	}
+	filled := int(float64(done) / float64(total) * float64(width))
+	if done > 0 && filled == 0 {
+		filled = 1
+	}
+	if filled > width {
+		filled = width
+	}
+	return strings.Repeat("█", filled) + strings.Repeat("░", max(0, width-filled))
+}
+
+func (a *App) missionProgressPercent(done, total int) int {
+	total = max(1, total)
+	done = min(done, total)
+	if done < 0 {
+		done = 0
+	}
+	return int(float64(done) / float64(total) * 100)
+}
+
+func (a *App) missionProgressSummary(done, total int) string {
+	return fmt.Sprintf("%d%% • %d/%d", a.missionProgressPercent(done, total), done, max(1, total))
 }
 
 func (a *App) liveRiskLabel(critical, high, medium, low int) string {
@@ -966,9 +1119,200 @@ func (a *App) yesText() string {
 
 func (a *App) noText() string {
 	if a.lang == i18n.TR {
-		return "Hayir"
+		return "Hayır"
 	}
 	return "No"
+}
+
+func (a *App) displayUpper(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+	if a.lang != i18n.TR {
+		return strings.ToUpper(trimmed)
+	}
+	replacer := strings.NewReplacer("i", "İ", "ı", "I")
+	return strings.ToUpper(replacer.Replace(trimmed))
+}
+
+func (a *App) technicalUpper(text string) string {
+	return strings.ToUpper(strings.TrimSpace(text))
+}
+
+func (a *App) toolDisplayUpper(text string) string {
+	trimmed := strings.TrimSpace(text)
+	switch trimmed {
+	case "", "-":
+		return "-"
+	case "built-in analyzer", "yerleşik analiz":
+		return a.displayUpper(trimmed)
+	default:
+		return a.technicalUpper(trimmed)
+	}
+}
+
+func (a *App) statusText(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "queued":
+		return a.catalog.T("status_queued")
+	case "running":
+		return a.catalog.T("status_running")
+	case "completed":
+		return a.catalog.T("status_completed")
+	case "failed":
+		return a.catalog.T("status_failed")
+	case "canceled":
+		return a.catalog.T("status_canceled")
+	case "skipped":
+		return a.catalog.T("status_skipped")
+	case "available", "ready":
+		return a.catalog.T("status_ready")
+	case "warning", "warn":
+		return a.catalog.T("status_warning")
+	case "missing":
+		return a.catalog.T("status_missing")
+	case "verified":
+		return a.catalog.T("status_verified")
+	case "unverified":
+		return a.catalog.T("status_unverified")
+	case "supported":
+		return a.catalog.T("status_supported")
+	case "unsupported":
+		return a.catalog.T("status_unsupported")
+	case "partial":
+		return a.catalog.T("status_partial")
+	case "clean":
+		return a.catalog.T("status_clean")
+	case "breach":
+		return a.catalog.T("status_breach")
+	case "degraded":
+		return a.catalog.T("status_degraded")
+	case "drift":
+		return a.catalog.T("status_drift")
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+func (a *App) scanStatusLabel(status domain.ScanStatus) string {
+	return a.statusText(string(status))
+}
+
+func (a *App) moduleStatusLabel(status domain.ModuleStatus) string {
+	return a.statusText(string(status))
+}
+
+func (a *App) runtimeCheckStatusText(status domain.RuntimeCheckStatus) string {
+	switch status {
+	case domain.RuntimeCheckPass:
+		return a.catalog.T("status_ready")
+	case domain.RuntimeCheckWarn:
+		return a.catalog.T("status_warning")
+	case domain.RuntimeCheckFail:
+		return a.catalog.T("status_failed")
+	default:
+		return a.catalog.T("status_skipped")
+	}
+}
+
+func (a *App) isolationModeLabel(mode domain.IsolationMode) string {
+	switch mode {
+	case domain.IsolationLocal:
+		return a.catalog.T("scan_isolation_local_short")
+	case domain.IsolationContainer:
+		return a.catalog.T("scan_isolation_container_short")
+	default:
+		return a.catalog.T("scan_isolation_auto_short")
+	}
+}
+
+func (a *App) plainBooleanLabel(value bool) string {
+	if value {
+		return a.yesText()
+	}
+	return a.noText()
+}
+
+func (a *App) plainSurfaceLabel(kind string) string {
+	switch strings.TrimSpace(strings.ToLower(kind)) {
+	case "overview":
+		if a.lang == i18n.TR {
+			return a.displayUpper(a.catalog.T("overview_tab"))
+		}
+		return "overview"
+	case "runtime":
+		if a.lang == i18n.TR {
+			return a.displayUpper(a.catalog.T("runtime_command_title"))
+		}
+		return "runtime"
+	default:
+		return kind
+	}
+}
+
+func (a *App) runtimeToolStateLabel(tool domain.RuntimeTool) string {
+	switch {
+	case !tool.Available:
+		return a.displayUpper(a.statusText("missing"))
+	case tool.Verification.Status() == "failed":
+		return a.displayUpper(a.statusText("failed"))
+	case tool.Healthy:
+		return a.displayUpper(a.statusText("available"))
+	default:
+		return a.displayUpper(a.statusText("drift"))
+	}
+}
+
+func (a *App) runtimeHealthSummary(runtime domain.RuntimeStatus) string {
+	available, drift, missing, failed := runtimeToolHealthCounts(runtime)
+	return fmt.Sprintf(
+		"%s %d • %s %d • %s %d • %s %d",
+		a.displayUpper(a.statusText("available")),
+		available,
+		a.displayUpper(a.statusText("drift")),
+		drift,
+		a.displayUpper(a.statusText("missing")),
+		missing,
+		a.displayUpper(a.statusText("failed")),
+		failed,
+	)
+}
+
+func (a *App) debriefSeverityBreakdown(run domain.ScanRun) string {
+	parts := make([]string, 0, 4)
+	for _, item := range []struct {
+		severity domain.Severity
+		count    int
+	}{
+		{domain.SeverityCritical, run.Summary.CountsBySeverity[domain.SeverityCritical]},
+		{domain.SeverityHigh, run.Summary.CountsBySeverity[domain.SeverityHigh]},
+		{domain.SeverityMedium, run.Summary.CountsBySeverity[domain.SeverityMedium]},
+		{domain.SeverityLow, run.Summary.CountsBySeverity[domain.SeverityLow]},
+	} {
+		if item.count <= 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", a.displayUpper(a.severityLabel(item.severity)), item.count))
+	}
+	if len(parts) == 0 {
+		return a.catalog.T("scan_debrief_no_findings")
+	}
+	return strings.Join(parts, " • ")
+}
+
+func (a *App) failedOrSkippedModuleSummary(modules []domain.ModuleResult) string {
+	items := make([]string, 0, len(modules))
+	for _, module := range modules {
+		switch module.Status {
+		case domain.ModuleFailed, domain.ModuleSkipped:
+			items = append(items, fmt.Sprintf("%s %s", module.Name, strings.ToLower(a.moduleStatusLabel(module.Status))))
+		}
+	}
+	if len(items) == 0 {
+		return a.catalog.T("status_clean")
+	}
+	return strings.Join(items, " • ")
 }
 
 func (a *App) severityBadge(severity domain.Severity) string {
@@ -1035,7 +1379,7 @@ func (a *App) modeBadge(mode domain.ScanMode) string {
 
 func (a *App) statusBadge(status string) string {
 	normalized := strings.ToLower(strings.TrimSpace(status))
-	label := strings.ToUpper(normalized)
+	label := a.displayUpper(a.statusText(normalized))
 	if a.colorDisabled() {
 		return a.plainBadge(label)
 	}
@@ -1183,32 +1527,32 @@ func (a *App) moduleFailureLabel(kind domain.ModuleFailureKind) string {
 	switch kind {
 	case domain.ModuleFailureSkipped:
 		if a.lang == i18n.TR {
-			return "atlandi"
+			return "atlandı"
 		}
 		return "skipped"
 	case domain.ModuleFailureToolMiss:
 		if a.lang == i18n.TR {
-			return "arac eksik"
+			return "araç eksik"
 		}
 		return "tool missing"
 	case domain.ModuleFailureTimeout:
 		if a.lang == i18n.TR {
-			return "zaman asimi"
+			return "zaman aşımı"
 		}
 		return "timeout"
 	case domain.ModuleFailureCommand:
 		if a.lang == i18n.TR {
-			return "komut basarisiz"
+			return "komut başarısız"
 		}
 		return "command failed"
 	case domain.ModuleFailureParse:
 		if a.lang == i18n.TR {
-			return "parse hatasi"
+			return "ayrıştırma hatası"
 		}
 		return "parse error"
 	case domain.ModuleFailureInfra:
 		if a.lang == i18n.TR {
-			return "altyapi hatasi"
+			return "altyapı hatası"
 		}
 		return "infra error"
 	case domain.ModuleFailureArtifactIO:

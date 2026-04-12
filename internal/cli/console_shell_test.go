@@ -332,6 +332,8 @@ func TestConsoleShellMissionViewShowsRunningStatePhaseAndTool(t *testing.T) {
 	for _, fragment := range []string{
 		app.catalog.T("status"),
 		strings.ToUpper(string(domain.ScanRunning)),
+		app.catalog.T("scan_mc_progress"),
+		"50%",
 		app.catalog.T("app_label_target"),
 		project.LocationHint,
 		app.phaseLabel(),
@@ -345,6 +347,75 @@ func TestConsoleShellMissionViewShowsRunningStatePhaseAndTool(t *testing.T) {
 	} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("expected mission view to contain %q, got %q", fragment, view)
+		}
+	}
+}
+
+func TestConsoleShellMissionViewLocalizesTurkishLabelsAndStatuses(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+	profile := domain.ScanProfile{
+		Mode:         domain.ModeSafe,
+		Coverage:     domain.CoverageCore,
+		Modules:      []string{"surface-inventory"},
+		SeverityGate: domain.SeverityHigh,
+		Isolation:    domain.IsolationAuto,
+	}
+
+	model := newConsoleShellModel(app, consoleShellLaunchState{
+		SelectedProjectID: project.ID,
+	}, context.Background())
+	model.stage = consoleStageMission
+	model.width = 160
+	model.height = 44
+	model.mission = consoleShellMissionState{
+		project:    project,
+		profile:    profile,
+		doctor:     app.runtimeDoctor(profile, false, false),
+		launchedAt: time.Unix(1_763_000_000, 0).UTC(),
+		running:    true,
+		console: &liveScanConsole{
+			project:    project,
+			profile:    profile,
+			frame:      2,
+			lastEvent:  "Yerleşik analiz depo yüzeyini tarıyor.",
+			lastStatus: string(domain.ScanRunning),
+			lastPhase:  app.catalog.T("scan_phase_attack_surface"),
+			lastModule: "surface-inventory",
+			lastTool:   app.moduleToolLabel("surface-inventory"),
+			run: domain.ScanRun{
+				Status: domain.ScanRunning,
+				ModuleResults: []domain.ModuleResult{
+					{Name: "surface-inventory", Status: domain.ModuleRunning, Summary: "Depo maruziyeti haritalanıyor."},
+				},
+			},
+		},
+		run: domain.ScanRun{
+			Status: domain.ScanRunning,
+			ModuleResults: []domain.ModuleResult{
+				{Name: "surface-inventory", Status: domain.ModuleRunning, Summary: "Depo maruziyeti haritalanıyor."},
+			},
+		},
+	}
+
+	view := model.View()
+	for _, fragment := range []string{
+		"Aşama",
+		"Araç",
+		"Modül",
+		"ÇALIŞIYOR",
+		"OTOMATİK",
+		"YERLEŞİK ANALİZ",
+		"Görev",
+	} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("expected Turkish mission view to contain %q, got %q", fragment, view)
+		}
+	}
+	for _, fragment := range []string{"RUNNING", "AUTO", "Arac", "Asama", "Gorev"} {
+		if strings.Contains(view, fragment) {
+			t.Fatalf("expected Turkish mission view to avoid raw token %q, got %q", fragment, view)
 		}
 	}
 }
@@ -569,12 +640,17 @@ func TestConsoleShellAppendsDebriefBelowMissionWhenRunCompletes(t *testing.T) {
 	view := model.View()
 	fragments := []string{
 		model.app.catalog.T("scan_debrief_title"),
+		model.app.catalog.T("app_label_report"),
+		model.app.catalog.T("scan_report_fix_plan_title"),
+		model.app.catalog.T("scan_report_blockers_title"),
 		model.app.catalog.T("scan_mc_handoff_title"),
 		model.app.catalog.T("app_label_findings"),
 		model.app.catalog.T("module_completed_count"),
 		model.app.catalog.T("module_failed_count"),
 		strings.ToUpper(string(domain.ScanCompleted)),
 		model.mission.project.DisplayName,
+		model.app.catalog.T("scan_spotlight_title"),
+		"GITLEAKS",
 	}
 	for _, fragment := range fragments {
 		if !strings.Contains(view, fragment) {
@@ -583,6 +659,34 @@ func TestConsoleShellAppendsDebriefBelowMissionWhenRunCompletes(t *testing.T) {
 	}
 	if missionIndex, debriefIndex := strings.Index(view, model.app.catalog.T("scan_mc_activity")), strings.Index(view, model.app.catalog.T("scan_debrief_title")); missionIndex == -1 || debriefIndex == -1 || debriefIndex <= missionIndex {
 		t.Fatalf("expected debrief to be appended after mission content\n%s", view)
+	}
+}
+
+func TestConsoleShellDebriefReportLocalizesTurkishAndShowsDetailedSections(t *testing.T) {
+	model := newCompletedConsoleShellModel(t)
+	model.app.lang = i18n.TR
+	model.app.catalog = i18n.New(i18n.TR)
+	model.mission.notice = model.app.consoleMissionDoneNotice(model.mission.run.Status, nil, len(model.mission.findings))
+
+	view := model.View()
+	for _, fragment := range []string{
+		model.app.catalog.T("app_label_report"),
+		model.app.catalog.T("scan_outcome_title"),
+		model.app.catalog.T("scan_report_fix_plan_title"),
+		model.app.catalog.T("scan_report_blockers_title"),
+		model.app.catalog.T("scan_phase_verdicts_title"),
+		model.app.catalog.T("scan_spotlight_title"),
+		model.app.catalog.T("scan_report_first_step_title"),
+		"TAMAMLANDI",
+	} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("expected Turkish debrief to contain %q, got %q", fragment, view)
+		}
+	}
+	for _, fragment := range []string{"Mission completed", "COMPLETED", "FAILED", "Gorev"} {
+		if strings.Contains(view, fragment) {
+			t.Fatalf("expected Turkish debrief to avoid raw token %q, got %q", fragment, view)
+		}
 	}
 }
 
@@ -656,7 +760,7 @@ func TestConsoleShellDebriefLayoutFitsShortTerminalWithDrawerOpen(t *testing.T) 
 		t.Fatalf("expected completed console surface to fit within %d lines, got %d\n%s", model.height, got, view)
 	}
 	for _, fragment := range []string{
-		model.app.catalog.T("scan_mode_live_metrics_health"),
+		model.app.catalog.T("app_label_report"),
 		model.app.catalog.T("scan_debrief_title"),
 		model.drawerHint(),
 	} {

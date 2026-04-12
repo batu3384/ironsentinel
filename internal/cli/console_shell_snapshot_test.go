@@ -83,6 +83,8 @@ func TestConsoleShellMissionSnapshot(t *testing.T) {
 	out := []byte(model.View())
 	for _, fragment := range []string{
 		app.catalog.T("status"),
+		app.catalog.T("scan_mc_progress"),
+		"33%",
 		app.phaseLabel(),
 		app.catalog.T("app_label_module"),
 		app.toolLabel(),
@@ -94,6 +96,9 @@ func TestConsoleShellMissionSnapshot(t *testing.T) {
 			t.Fatalf("console shell mission snapshot is missing %q\n%s", fragment, string(out))
 		}
 	}
+	if strings.Contains(string(out), app.catalog.T("scan_launch_progress")) {
+		t.Fatalf("console shell mission snapshot should integrate progress into the mission rail, got detached progress label\n%s", string(out))
+	}
 }
 
 func TestConsoleShellDebriefDrawerSnapshot(t *testing.T) {
@@ -103,11 +108,13 @@ func TestConsoleShellDebriefDrawerSnapshot(t *testing.T) {
 	out := []byte(model.View())
 	fragments := []string{
 		model.app.catalog.T("scan_debrief_title"),
+		model.app.catalog.T("app_label_report"),
+		model.app.catalog.T("scan_mc_progress"),
 		model.app.catalog.T("findings_title"),
 		model.app.catalog.T("scan_mc_handoff_title"),
 		model.app.catalog.T("scan_mc_activity"),
 		model.mission.project.DisplayName,
-		"Leaked deploy",
+		model.app.catalog.T("scan_spotlight_title"),
 	}
 	if !containsAll(out, fragments...) {
 		t.Fatalf("console shell debrief drawer snapshot is missing expected sections: %v\n%s", missingFragments(out, fragments...), string(out))

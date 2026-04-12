@@ -51,16 +51,26 @@ func (m scanMissionModel) renderMissionBriefPanel(width int) string {
 	activeModule := defaultString(m.console.lastModule, "-")
 	done, total := m.progressCounts()
 	queued, running, completed, failed, skipped := m.app.moduleStatusCounts(run.ModuleResults)
-	lines := renderFactRows(m.app.tuiTheme(), width,
+	rail := fmt.Sprintf(
+		"%s  %s • %s %d • %s %d",
+		m.app.scanProgressRail(done, total, min(20, max(10, width/5))),
+		m.app.missionProgressSummary(done, total),
+		strings.ToLower(m.app.catalog.T("module_running_count")),
+		running,
+		strings.ToLower(m.app.catalog.T("module_queued_count")),
+		queued,
+	)
+	lines := []string{rail, ""}
+	lines = append(lines, renderFactRows(m.app.tuiTheme(), width,
 		factPair{Label: m.app.catalog.T("app_label_project"), Value: m.project.DisplayName},
 		factPair{Label: m.app.catalog.T("app_label_target"), Value: trimForSelect(m.project.LocationHint, max(24, width-18))},
 		factPair{Label: m.app.catalog.T("app_label_stacks"), Value: trimForSelect(stacks, max(18, width-18))},
-		factPair{Label: m.app.catalog.T("app_label_module"), Value: strings.ToUpper(activeModule)},
-		factPair{Label: m.app.catalog.T("app_label_scope"), Value: fmt.Sprintf("%d/%d • %s %d • %s %d", done, total, strings.ToLower(m.app.catalog.T("module_running_count")), running, strings.ToLower(m.app.catalog.T("module_queued_count")), queued)},
+		factPair{Label: m.app.catalog.T("app_label_module"), Value: m.app.technicalUpper(activeModule)},
+		factPair{Label: m.app.catalog.T("app_label_scope"), Value: fmt.Sprintf("%d/%d • %s %d • %s %d", done, total, strings.ToLower(m.app.catalog.T("module_completed_count")), completed, strings.ToLower(m.app.catalog.T("module_failed_count")), failed)},
 		factPair{Label: m.app.catalog.T("app_label_findings"), Value: fmt.Sprintf("%d • %s %d • %s %d • %s %d", run.Summary.TotalFindings, strings.ToLower(m.app.catalog.T("module_completed_count")), completed, strings.ToLower(m.app.catalog.T("module_failed_count")), failed, strings.ToLower(m.app.catalog.T("module_skipped_count")), skipped)},
-		factPair{Label: m.app.catalog.T("app_label_isolation"), Value: strings.ToUpper(string(m.profile.Isolation))},
-		factPair{Label: m.app.catalog.T("app_label_health"), Value: strings.ToUpper(m.app.scanPostureLabel(run))},
-	)
+		factPair{Label: m.app.catalog.T("app_label_isolation"), Value: m.app.displayUpper(m.app.isolationModeLabel(m.profile.Isolation))},
+		factPair{Label: m.app.catalog.T("app_label_health"), Value: m.app.displayUpper(m.app.scanPostureLabel(run))},
+	)...)
 	return renderMissionBox(m.app.catalog.T("scan_mode_live_brief_title"), strings.Join(lines, "\n"))
 }
 
@@ -69,9 +79,12 @@ func (m scanMissionModel) renderMissionLanePanel(width int) string {
 	done, total := m.progressCounts()
 	currentLane, nextLane, deferredLane := m.missionLaneFlow()
 	activeLaneDescriptor := m.missionCurrentLaneDescriptor()
-	activeLane := strings.ToUpper(defaultString(m.console.lastPhase, m.app.catalog.T("scan_phase_general")))
-	activeModule := strings.ToUpper(defaultString(m.console.lastModule, "-"))
-	state := strings.ToUpper(defaultString(m.console.lastStatus, string(domain.ModuleQueued)))
+	activeLane := m.app.displayUpper(m.app.phaseDisplayText(m.console.lastPhase, m.console.lastModule))
+	activeModule := m.app.technicalUpper(defaultString(m.console.lastModule, "-"))
+	state := m.app.displayUpper(m.app.moduleStatusLabel(domain.ModuleQueued))
+	if raw := strings.TrimSpace(m.console.lastStatus); raw != "" {
+		state = m.app.displayUpper(m.app.statusText(raw))
+	}
 	queued, running, completed, failed, skipped := m.app.moduleStatusCounts(run.ModuleResults)
 
 	lines := []string{
@@ -161,7 +174,7 @@ func (m scanMissionModel) renderMissionLaneChipRows(width int) []string {
 		state := m.missionLaneStateLabel(lane.Key)
 		label := trimForSelect(lane.Title, max(12, width/4))
 		active := lane.Key == activeLaneKey && !m.app.isTerminalRunStatus(m.consoleRun().Status)
-		chips = append(chips, theme.chipStyle(active).Render(strings.ToUpper(state)+" "+label))
+		chips = append(chips, theme.chipStyle(active).Render(m.app.displayUpper(state)+" "+label))
 	}
 	if len(chips) == 0 {
 		return nil
@@ -217,7 +230,7 @@ func (m scanMissionModel) renderMissionExecutionPanel(width int) string {
 	run := m.consoleRun()
 	queued, running, completed, failed, _ := m.app.moduleStatusCounts(run.ModuleResults)
 	lines := []string{
-		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mc_activity"), trimForSelect(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting")), max(18, width-18))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mc_activity"), trimForSelect(m.app.operatorText(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting"))), max(18, width-18))),
 		fmt.Sprintf("%s: %s", m.app.toolLabel(), m.missionActiveTool()),
 		fmt.Sprintf("%s: %d/%d • %s %d • %s %d • %s %d • %s %d", m.app.catalog.T("scan_scope_modules"), done, total, strings.ToLower(m.app.catalog.T("module_running_count")), running, strings.ToLower(m.app.catalog.T("module_queued_count")), queued, strings.ToLower(m.app.catalog.T("module_completed_count")), completed, strings.ToLower(m.app.catalog.T("module_failed_count")), failed),
 		"",
@@ -227,7 +240,7 @@ func (m scanMissionModel) renderMissionExecutionPanel(width int) string {
 	if len(stream) > 0 {
 		lines = append(lines, "", m.app.catalog.T("scan_mode_live_telemetry_title")+":")
 		for index, line := range stream[:min(2, len(stream))] {
-			lines = append(lines, fmt.Sprintf("%02d | %s", index+1, trimForSelect(line, max(18, width-10))))
+			lines = append(lines, fmt.Sprintf("%02d | %s", index+1, trimForSelect(m.app.operatorText(line), max(18, width-10))))
 		}
 	}
 	return renderMissionBox(m.app.catalog.T("scan_mode_live_execution_title"), strings.Join(lines, "\n"))
@@ -246,13 +259,13 @@ func (m scanMissionModel) renderMissionThreatPanel(width int) string {
 	}
 	hot := m.app.prioritizedFindings(source, 2)
 	lines := []string{
-		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mc_risk"), strings.ToUpper(m.app.liveRiskLabel(
+		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mc_risk"), m.app.displayUpper(m.app.liveRiskLabel(
 			run.Summary.CountsBySeverity[domain.SeverityCritical],
 			run.Summary.CountsBySeverity[domain.SeverityHigh],
 			run.Summary.CountsBySeverity[domain.SeverityMedium],
 			run.Summary.CountsBySeverity[domain.SeverityLow],
 		))),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), strings.ToUpper(m.app.scanPostureLabel(run))),
+		fmt.Sprintf("%s: %s", m.app.catalog.T("status"), m.app.displayUpper(m.app.scanPostureLabel(run))),
 		fmt.Sprintf("%s: %d", m.app.catalog.T("app_label_findings"), run.Summary.TotalFindings),
 		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_preflight_title"), preflight),
 	}
@@ -263,7 +276,7 @@ func (m scanMissionModel) renderMissionThreatPanel(width int) string {
 		top := hot[0]
 		lines = append(lines,
 			"",
-			fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_findings_title"), strings.ToUpper(m.app.severityLabel(top.Severity))),
+			fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_findings_title"), m.app.displayUpper(m.app.severityLabel(top.Severity))),
 			trimForSelect(m.app.displayFindingTitle(top), max(18, width-8)),
 			fmt.Sprintf("%s • %s", m.app.categoryLabel(top.Category), trimForSelect(coalesceString(top.Location, top.Module), max(16, width-12))),
 		)
@@ -325,26 +338,7 @@ func (m scanMissionModel) moduleFlowRows(width int) []string {
 	if width < 56 {
 		nameWidth = 12
 	}
-	if m.statusOnlyMotion {
-		statusWidth := 9
-		for _, name := range modules {
-			module, ok := index[name]
-			status := domain.ModuleQueued
-			if ok {
-				status = module.Status
-			}
-			icon := m.moduleStateStatusIcon(status)
-			summaryWidth := max(14, width-nameWidth-statusWidth-8)
-			summary := trimForSelect(m.moduleStateSummary(name, module, status), summaryWidth)
-			lines = append(lines, fmt.Sprintf("%s %-*s %-*s %s", icon, nameWidth, trimForSelect(name, nameWidth), statusWidth, strings.ToUpper(string(status)), summary))
-		}
-		return lines
-	}
-	barWidth := 12
-	if width < 56 {
-		barWidth = 10
-	}
-	rainWidth := max(8, min(18, width/5))
+	statusWidth := 11
 	for _, name := range modules {
 		module, ok := index[name]
 		status := domain.ModuleQueued
@@ -352,11 +346,12 @@ func (m scanMissionModel) moduleFlowRows(width int) []string {
 			status = module.Status
 		}
 		icon := m.moduleStateIcon(status)
-		progress := m.moduleStateBar(module, status, barWidth)
-		rain := m.matrixRain(name, status, rainWidth)
-		summaryWidth := max(14, width-nameWidth-barWidth-rainWidth-16)
+		if m.statusOnlyMotion {
+			icon = m.moduleStateStatusIcon(status)
+		}
+		summaryWidth := max(14, width-nameWidth-statusWidth-8)
 		summary := trimForSelect(m.moduleStateSummary(name, module, status), summaryWidth)
-		lines = append(lines, fmt.Sprintf("%s %-*s %s %s %s", icon, nameWidth, trimForSelect(name, nameWidth), progress, rain, summary))
+		lines = append(lines, fmt.Sprintf("%s %-*s %-*s %s", icon, nameWidth, trimForSelect(name, nameWidth), statusWidth, m.app.displayUpper(m.app.moduleStatusLabel(status)), summary))
 	}
 	return lines
 }
@@ -396,85 +391,10 @@ func (m scanMissionModel) moduleStateIcon(status domain.ModuleStatus) string {
 	}
 }
 
-func (m scanMissionModel) moduleStateBar(module domain.ModuleResult, status domain.ModuleStatus, width int) string {
-	if width < 8 {
-		width = 8
-	}
-	fill := 0
-	switch status {
-	case domain.ModuleCompleted:
-		fill = width
-	case domain.ModuleFailed:
-		fill = max(2, width/2)
-	case domain.ModuleRunning:
-		fill = max(1, (m.console.frame % (width + 1)))
-	case domain.ModuleSkipped:
-		fill = width / 3
-	default:
-		fill = 0
-	}
-	if module.FindingCount > 0 && status == domain.ModuleCompleted {
-		fill = width
-	}
-
-	color := lipgloss.Color("#3FB950")
-	switch status {
-	case domain.ModuleFailed:
-		color = lipgloss.Color("#FF6B6B")
-	case domain.ModuleRunning:
-		color = lipgloss.Color("#5EEAD4")
-	case domain.ModuleSkipped:
-		color = lipgloss.Color("#94A3B8")
-	default:
-	}
-	filled := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", fill))
-	return "[" + filled + strings.Repeat("·", max(0, width-fill)) + "]"
-}
-
-func (m scanMissionModel) matrixRain(name string, status domain.ModuleStatus, width int) string {
-	if width < 8 {
-		width = 8
-	}
-	alphabet := "01{}[]<>#@/\\=+-IRONSENTINEL"
-	switch status {
-	case domain.ModuleCompleted:
-		alphabet = "✓✓✓IRONSEAL::"
-	case domain.ModuleFailed:
-		alphabet = "!!##!!fault::"
-	case domain.ModuleRunning:
-		alphabet = "01{}[]<>#@/\\=+-trace"
-	case domain.ModuleSkipped:
-		alphabet = "--..skip..--"
-	}
-	builder := strings.Builder{}
-	seed := 0
-	for _, r := range name {
-		seed += int(r)
-	}
-	for i := 0; i < width; i++ {
-		index := (seed + i + m.console.frame*3) % len(alphabet)
-		ch := string(alphabet[index])
-		if status == domain.ModuleCompleted && i > width/2 {
-			ch = "·"
-		}
-		builder.WriteString(ch)
-	}
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#2DD4BF"))
-	switch status {
-	case domain.ModuleCompleted:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ADE80"))
-	case domain.ModuleFailed:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("#F87171"))
-	case domain.ModuleSkipped:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
-	}
-	return style.Render(builder.String())
-}
-
 func (m scanMissionModel) moduleStateSummary(name string, module domain.ModuleResult, status domain.ModuleStatus) string {
 	switch status {
 	case domain.ModuleCompleted, domain.ModuleFailed, domain.ModuleSkipped:
-		return coalesceString(module.Summary, m.app.moduleNarrative(name))
+		return m.app.moduleSummaryText(module)
 	case domain.ModuleRunning:
 		return m.app.moduleNarrative(name)
 	default:

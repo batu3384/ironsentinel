@@ -49,9 +49,9 @@ func buildSandboxEnv(profile domain.ScanProfile) []string {
 		}
 	}
 	env = append(env,
-		"AEGIS_ALLOW_BUILD="+boolString(profile.AllowBuild),
-		"AEGIS_ALLOW_NETWORK="+boolString(profile.AllowNetwork),
-		"AEGIS_SCAN_MODE="+string(profile.Mode),
+		"IRONSENTINEL_ALLOW_BUILD="+boolString(profile.AllowBuild),
+		"IRONSENTINEL_ALLOW_NETWORK="+boolString(profile.AllowNetwork),
+		"IRONSENTINEL_SCAN_MODE="+string(profile.Mode),
 	)
 	sort.Strings(env)
 	return env

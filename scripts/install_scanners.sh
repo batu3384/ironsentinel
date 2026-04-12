@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TOOLS_DIR="${AEGIS_TOOLS_DIR:-$ROOT_DIR/runtime/tools/bin}"
+TOOLS_DIR="${IRONSENTINEL_TOOLS_DIR:-$ROOT_DIR/runtime/tools/bin}"
 TOOLS_ROOT="$(dirname "$TOOLS_DIR")"
 TEMP_ROOT="${TMPDIR:-/tmp}/ironsentinel-installer"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"

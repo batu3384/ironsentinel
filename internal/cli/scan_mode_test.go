@@ -98,7 +98,6 @@ func TestScanMissionModelSharedDoneFooterStillOffersFollowUpActions(t *testing.T
 func TestScanMissionModelSharedTickStillAnimates(t *testing.T) {
 	t.Setenv("CI", "")
 	t.Setenv("IRONSENTINEL_REDUCED_MOTION", "")
-	t.Setenv("AEGIS_REDUCED_MOTION", "")
 	t.Setenv("TERM", "xterm-256color")
 
 	app, project := newTestTUIApp(t)

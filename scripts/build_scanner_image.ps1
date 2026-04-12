@@ -10,8 +10,8 @@ Builds the pinned scanner bundle image used by IronSentinel container isolation.
 
 $RootDir = Split-Path -Parent $PSScriptRoot
 $Containerfile = if ($env:APPSEC_CONTAINERFILE_PATH) { $env:APPSEC_CONTAINERFILE_PATH } else { Join-Path $RootDir "deploy\scanner-bundle.Containerfile" }
-$Image = if ($env:AEGIS_CONTAINER_IMAGE) { $env:AEGIS_CONTAINER_IMAGE } else { "ghcr.io/batu3384/ironsentinel-scanner-bundle:latest" }
-$Engine = if ($env:AEGIS_CONTAINER_ENGINE) { $env:AEGIS_CONTAINER_ENGINE } else { "auto" }
+$Image = if ($env:IRONSENTINEL_CONTAINER_IMAGE) { $env:IRONSENTINEL_CONTAINER_IMAGE } else { "ghcr.io/batu3384/ironsentinel-scanner-bundle:latest" }
+$Engine = if ($env:IRONSENTINEL_CONTAINER_ENGINE) { $env:IRONSENTINEL_CONTAINER_ENGINE } else { "auto" }
 $Push = $false
 
 function Require-ArgValue([string]$Flag, [int]$Index) {

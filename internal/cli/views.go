@@ -13,6 +13,7 @@ import (
 
 type liveScanTracker struct {
 	spinner   *pterm.SpinnerPrinter
+	plain     bool
 	total     int
 	completed int
 	failed    int
@@ -142,6 +143,14 @@ func (a *App) startLiveScanTracker(project domain.Project, profile domain.ScanPr
 	if a.streamMissionControl {
 		return nil
 	}
+	total := max(1, a.moduleCount(profile.Modules))
+	if a.shellSafeSurfaceOutput() {
+		pterm.Printf("%s: %d%% • 0/%d • %s\n", a.catalog.T("scan_mc_progress"), 0, total, a.catalog.T("scan_mc_status_booting"))
+		return &liveScanTracker{
+			plain: true,
+			total: total,
+		}
+	}
 	pterm.Println()
 	pterm.DefaultSection.Println(a.catalog.T("scan_live_title"))
 	phaseLines := strings.Join(a.scanPhaseLines(profile.Modules), "\n")
@@ -155,12 +164,19 @@ func (a *App) startLiveScanTracker(project domain.Project, profile domain.ScanPr
 	spinner, _ := pterm.DefaultSpinner.Start(a.catalog.T("scan_live_boot", project.DisplayName, a.moduleCount(profile.Modules)))
 	return &liveScanTracker{
 		spinner: spinner,
-		total:   max(1, a.moduleCount(profile.Modules)),
+		total:   total,
 	}
 }
 
 func (a *App) updateLiveScanTracker(tracker *liveScanTracker, event domain.StreamEvent) {
-	if tracker == nil || tracker.spinner == nil {
+	if tracker == nil {
+		return
+	}
+	if tracker.plain {
+		a.updatePlainLiveScanTracker(tracker, event)
+		return
+	}
+	if tracker.spinner == nil {
 		return
 	}
 
@@ -229,6 +245,47 @@ func (a *App) updateLiveScanTracker(tracker *liveScanTracker, event domain.Strea
 	}
 }
 
+func (a *App) updatePlainLiveScanTracker(tracker *liveScanTracker, event domain.StreamEvent) {
+	switch {
+	case event.Type == "module.updated" && event.Module != nil:
+		module := *event.Module
+		switch module.Status {
+		case domain.ModuleCompleted:
+			tracker.completed++
+		case domain.ModuleFailed:
+			tracker.failed++
+		case domain.ModuleSkipped:
+			tracker.skipped++
+		default:
+			return
+		}
+		done := tracker.completed + tracker.failed + tracker.skipped
+		percent := 0
+		if tracker.total > 0 {
+			percent = int(float64(done) / float64(tracker.total) * 100)
+		}
+		line := fmt.Sprintf(
+			"%s: %d%% • %d/%d • %s: %s • %s: %s",
+			a.catalog.T("scan_mc_progress"),
+			percent,
+			done,
+			tracker.total,
+			a.catalog.T("module"),
+			module.Name,
+			a.catalog.T("status"),
+			a.displayUpper(a.moduleStatusLabel(module.Status)),
+		)
+		if phase := a.phaseDisplayText("", module.Name); phase != "" {
+			line += fmt.Sprintf(" • %s: %s", a.phaseLabel(), phase)
+		}
+		pterm.Println(line)
+	case event.Type == "run.failed":
+		pterm.Error.Println(a.catalog.T("scan_failed"))
+	case event.Type == "run.canceled":
+		pterm.Warning.Println(a.catalog.T("scan_canceled"))
+	}
+}
+
 func (a *App) newLiveScanConsole(project domain.Project, profile domain.ScanProfile) *liveScanConsole {
 	if !a.streamMissionControl {
 		return nil
@@ -251,7 +308,7 @@ func (c *liveScanConsole) update(a *App, event domain.StreamEvent) {
 	}
 	c.eventCount++
 	if strings.TrimSpace(event.Message) != "" {
-		c.lastEvent = event.Message
+		c.lastEvent = a.operatorText(event.Message)
 	}
 	if event.Module != nil {
 		c.lastModule = event.Module.Name
@@ -317,10 +374,10 @@ func (c *liveScanConsole) render(a *App) {
 		{
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_title"), a.catalog.T("scan_mc_agent_name"), a.catalog.T("scan_mc_agent_state"), agentState, a.catalog.T("scan_mc_agent_focus"), trimForSelect(agentFocus, 64))},
 			{Data: agentAvatar},
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("scan_mc_lane"), defaultString(c.lastPhase, a.catalog.T("scan_phase_general")), a.catalog.T("scan_mc_module"), defaultString(c.lastModule, "-"))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("scan_mc_lane"), a.phaseDisplayText(c.lastPhase, c.lastModule), a.catalog.T("scan_mc_module"), defaultString(c.lastModule, "-"))},
 		},
 		{
-			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_activity"), trimForSelect(c.lastEvent, 96))},
+			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_activity"), trimForSelect(a.operatorText(c.lastEvent), 96))},
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]", a.catalog.T("scan_mc_agent_thought"), trimForSelect(agentThought, 96))},
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%d[-]", a.catalog.T("scan_mc_progress"), progress, a.catalog.T("summary_total"), c.run.Summary.TotalFindings)},
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]", a.catalog.T("scan_mc_last_finding"), defaultString(trimForSelect(c.lastFinding, 72), "-"), a.catalog.T("summary_total"), fmt.Sprintf("%d", c.run.Summary.TotalFindings))},
@@ -429,7 +486,7 @@ func (a *App) renderInlineModulePulse(run domain.ScanRun) {
 
 	lines := make([]string, 0, 8)
 	for _, module := range run.ModuleResults {
-		lines = append(lines, fmt.Sprintf("%s | %s | %s", module.Name, strings.ToUpper(string(module.Status)), trimForSelect(coalesceString(module.Summary, "-"), 72)))
+		lines = append(lines, fmt.Sprintf("%s | %s | %s", module.Name, a.displayUpper(a.moduleStatusLabel(module.Status)), trimForSelect(a.operatorText(coalesceString(module.Summary, "-")), 72)))
 		if len(lines) >= 8 {
 			break
 		}
@@ -456,7 +513,7 @@ func (a *App) renderInlineThreatPulse(run domain.ScanRun) {
 		a.severityBadgeCount(domain.SeverityHigh, high),
 		a.severityBadgeCount(domain.SeverityMedium, medium),
 		a.severityBadgeCount(domain.SeverityLow, low),
-		strings.ToUpper(a.liveRiskLabel(critical, high, medium, low)),
+		a.displayUpper(a.liveRiskLabel(critical, high, medium, low)),
 	})
 	_ = pterm.DefaultTable.WithHasHeader().WithData(data).Render()
 
@@ -489,7 +546,7 @@ func (a *App) renderInlineTelemetryStream(c *liveScanConsole, lines []string) {
 		return
 	}
 	for index, line := range lines {
-		phase := defaultString(c.lastPhase, a.catalog.T("scan_phase_general"))
+		phase := a.phaseDisplayText(c.lastPhase, c.lastModule)
 		if index < len(c.telemetry) {
 			pterm.Println(fmt.Sprintf(" %02d | %s | %s", index+1, trimForSelect(phase, 24), line))
 			continue
@@ -558,7 +615,7 @@ func (a *App) missionAgentStateLabel(c *liveScanConsole) string {
 		return a.catalog.T("scan_mc_state_degraded")
 	case strings.TrimSpace(c.lastFinding) != "":
 		return a.catalog.T("scan_mc_state_alert")
-	case strings.Contains(strings.ToLower(c.lastPhase), strings.ToLower(a.catalog.T("scan_phase_attack_surface"))):
+	case strings.Contains(strings.ToLower(a.phaseDisplayText(c.lastPhase, c.lastModule)), strings.ToLower(a.catalog.T("scan_phase_attack_surface"))):
 		return a.catalog.T("scan_mc_state_mapping")
 	case strings.TrimSpace(c.lastModule) != "":
 		return a.catalog.T("scan_mc_state_correlating")
@@ -572,7 +629,7 @@ func (a *App) missionAgentFocus(c *liveScanConsole) string {
 	case strings.TrimSpace(c.lastModule) != "":
 		return a.moduleNarrative(c.lastModule)
 	case strings.TrimSpace(c.lastPhase) != "":
-		return c.lastPhase
+		return a.phaseDisplayText(c.lastPhase, "")
 	default:
 		return a.catalog.T("scan_mc_focus_default")
 	}
@@ -599,7 +656,7 @@ func (a *App) missionAgentThought(c *liveScanConsole) string {
 func (a *App) missionTelemetryLine(event domain.StreamEvent) string {
 	switch {
 	case event.Type == "run.updated":
-		return fmt.Sprintf("[boot ] %s", trimForSelect(coalesceString(event.Message, a.catalog.T("scan_mc_waiting")), 88))
+		return fmt.Sprintf("[boot ] %s", trimForSelect(a.operatorText(coalesceString(event.Message, a.catalog.T("scan_mc_waiting"))), 88))
 	case event.Type == "module.updated" && event.Module != nil:
 		module := event.Module
 		switch module.Status {
@@ -608,11 +665,11 @@ func (a *App) missionTelemetryLine(event domain.StreamEvent) string {
 		case domain.ModuleRunning:
 			return fmt.Sprintf("[exec ] %s -> %s", module.Name, trimForSelect(a.moduleNarrative(module.Name), 72))
 		case domain.ModuleCompleted:
-			return fmt.Sprintf("[done ] %s -> %s", module.Name, trimForSelect(coalesceString(module.Summary, a.moduleNarrative(module.Name)), 72))
+			return fmt.Sprintf("[done ] %s -> %s", module.Name, trimForSelect(a.moduleSummaryText(*module), 72))
 		case domain.ModuleFailed:
-			return fmt.Sprintf("[fail ] %s -> %s", module.Name, trimForSelect(coalesceString(module.Summary, a.moduleFailureLabel(module.FailureKind)), 72))
+			return fmt.Sprintf("[fail ] %s -> %s", module.Name, trimForSelect(a.moduleSummaryText(*module), 72))
 		case domain.ModuleSkipped:
-			return fmt.Sprintf("[skip ] %s -> %s", module.Name, trimForSelect(coalesceString(module.Summary, a.moduleFailureLabel(module.FailureKind)), 72))
+			return fmt.Sprintf("[skip ] %s -> %s", module.Name, trimForSelect(a.moduleSummaryText(*module), 72))
 		}
 	case event.Type == "module.execution" && event.Execution != nil:
 		execution := event.Execution
@@ -626,23 +683,23 @@ func (a *App) missionTelemetryLine(event domain.StreamEvent) string {
 			attemptLabel = "deneme"
 			statusLabel = "durum"
 		}
-		return fmt.Sprintf("[trace] %s -> %d/%d %s, %s %s", execution.Module, lastAttempt, execution.MaxAttempts, attemptLabel, statusLabel, strings.ToUpper(string(execution.Status)))
+		return fmt.Sprintf("[trace] %s -> %d/%d %s, %s %s", execution.Module, lastAttempt, execution.MaxAttempts, attemptLabel, statusLabel, a.displayUpper(a.moduleStatusLabel(execution.Status)))
 	case event.Type == "finding.created" && event.Finding != nil:
-		return fmt.Sprintf("[alert] %s %s @ %s", strings.ToUpper(string(event.Finding.Severity)), trimForSelect(event.Finding.Title, 44), trimForSelect(coalesceString(event.Finding.Location, "-"), 24))
+		return fmt.Sprintf("[alert] %s %s @ %s", a.displayUpper(a.severityLabel(event.Finding.Severity)), trimForSelect(event.Finding.Title, 44), trimForSelect(coalesceString(event.Finding.Location, "-"), 24))
 	case event.Type == "run.completed":
-		return fmt.Sprintf("[seal ] %s", trimForSelect(coalesceString(event.Message, a.catalog.T("scan_completed")), 88))
+		return fmt.Sprintf("[seal ] %s", trimForSelect(a.operatorText(coalesceString(event.Message, a.catalog.T("scan_completed"))), 88))
 	case event.Type == "run.failed":
-		return fmt.Sprintf("[halt ] %s", trimForSelect(coalesceString(event.Message, a.catalog.T("scan_failed")), 88))
+		return fmt.Sprintf("[halt ] %s", trimForSelect(a.operatorText(coalesceString(event.Message, a.catalog.T("scan_failed"))), 88))
 	case event.Type == "run.canceled":
-		return fmt.Sprintf("[halt ] %s", trimForSelect(coalesceString(event.Message, a.catalog.T("scan_canceled")), 88))
+		return fmt.Sprintf("[halt ] %s", trimForSelect(a.operatorText(coalesceString(event.Message, a.catalog.T("scan_canceled"))), 88))
 	}
-	return fmt.Sprintf("[info ] %s", trimForSelect(coalesceString(event.Message, a.catalog.T("scan_mc_waiting")), 88))
+	return fmt.Sprintf("[info ] %s", trimForSelect(a.operatorText(coalesceString(event.Message, a.catalog.T("scan_mc_waiting"))), 88))
 }
 
 func (a *App) missionCodeStreamLines(c *liveScanConsole) []string {
 	lines := []string{
 		fmt.Sprintf("agent.bind(project=%q, mode=%q, coverage=%q)", c.project.DisplayName, c.profile.Mode, a.coverageLabel(c.profile.Coverage)),
-		fmt.Sprintf("agent.focus(lane=%q, module=%q)", defaultString(c.lastPhase, a.catalog.T("scan_phase_general")), defaultString(c.lastModule, "-")),
+		fmt.Sprintf("agent.focus(lane=%q, module=%q)", a.phaseDisplayText(c.lastPhase, c.lastModule), defaultString(c.lastModule, "-")),
 		fmt.Sprintf("risk.snapshot(level=%q, findings=%d)", a.liveRiskLabel(
 			c.run.Summary.CountsBySeverity[domain.SeverityCritical],
 			c.run.Summary.CountsBySeverity[domain.SeverityHigh],
@@ -706,7 +763,7 @@ func (a *App) missionCoverageMatrixLines(c *liveScanConsole) []string {
 		} else if stats[phase].completed > 0 {
 			state = a.catalog.T("scan_mc_matrix_done")
 		}
-		lines = append(lines, fmt.Sprintf("%s | %s | c:%d f:%d s:%d", strings.ToUpper(state), phase, stats[phase].completed, stats[phase].failed, stats[phase].skipped))
+		lines = append(lines, fmt.Sprintf("%s | %s | c:%d f:%d s:%d", a.displayUpper(state), phase, stats[phase].completed, stats[phase].failed, stats[phase].skipped))
 	}
 	return lines
 }
@@ -743,7 +800,7 @@ func (a *App) missionLaneSchematicLines(c *liveScanConsole) []string {
 		if lane.Key == activeLaneKey && !a.isTerminalRunStatus(c.run.Status) {
 			indicator = " > "
 		}
-		line := fmt.Sprintf("%s[%s] %s", indicator, strings.ToUpper(state), lane.Title)
+		line := fmt.Sprintf("%s[%s] %s", indicator, a.displayUpper(state), lane.Title)
 		if index < len(lanes)-1 {
 			line += "  --->"
 		}
@@ -779,6 +836,18 @@ func renderPlainStage(title string, lines ...string) string {
 			continue
 		}
 		stageLines = append(stageLines, "- "+line)
+	}
+	return strings.Join(stageLines, "\n")
+}
+
+func renderPlainReportStage(title string, lines ...string) string {
+	stageLines := []string{strings.TrimSpace(title) + ":"}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		stageLines = append(stageLines, line)
 	}
 	return strings.Join(stageLines, "\n")
 }
@@ -1185,7 +1254,7 @@ func (a *App) renderScanOutcome(run domain.ScanRun, findings []domain.Finding, r
 
 	failedModules := make([]string, 0)
 	for _, module := range run.ModuleResults {
-		if module.Status != domain.ModuleFailed {
+		if module.Status != domain.ModuleFailed && module.Status != domain.ModuleSkipped {
 			continue
 		}
 		failedModules = append(failedModules, fmt.Sprintf("%s (%s)", module.Name, a.moduleFailureLabel(module.FailureKind)))
@@ -1317,6 +1386,25 @@ func (a *App) renderAnalystHandoff(run domain.ScanRun, findings []domain.Finding
 	}).Render()
 }
 
+func (a *App) renderPlainScanLaunchSummary(project domain.Project, profile domain.ScanProfile) string {
+	lines := []string{
+		renderPlainStage(a.catalog.T("console_stage_launch"),
+			fmt.Sprintf("%s: %s", a.catalog.T("title"), project.DisplayName),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_target"), project.LocationHint),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_mode"), a.modeLabel(profile.Mode)),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_preferred_mode"), a.displayUpper(a.isolationModeLabel(profile.Isolation))),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_mission"),
+			fmt.Sprintf("%s: %s", a.catalog.T("coverage_profile"), a.coverageLabel(profile.Coverage)),
+			fmt.Sprintf("%s: %d", a.catalog.T("scan_modules"), a.moduleCount(profile.Modules)),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_live_phases"), strings.Join(a.scanPhaseLines(profile.Modules), " • ")),
+		),
+		"",
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (a *App) renderPlainRunSummary(run domain.ScanRun, project *domain.Project, findings []domain.Finding) string {
 	projectName := run.ProjectID
 	projectPath := "-"
@@ -1333,12 +1421,24 @@ func (a *App) renderPlainRunSummary(run domain.ScanRun, project *domain.Project,
 	if run.Status == domain.ScanCompleted {
 		requiredErr = a.enforceRequiredModuleResults(run, run.Profile.Modules)
 	}
+	var debriefLines []string
+	if run.Status == domain.ScanQueued || run.Status == domain.ScanRunning {
+		debriefLines = []string{
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_live_pressure"), a.scanPostureSummary(run)),
+			fmt.Sprintf("%s: %s", a.catalog.T("severity"), a.debriefSeverityBreakdown(run)),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_modules"), a.failedOrSkippedModuleSummary(run.ModuleResults)),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_hot_findings"), a.hotFindingSummary(findings, 2, 56)),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_next_steps"), a.plainNextAction(run, findings, requiredErr)),
+		}
+	} else {
+		debriefLines = append([]string{a.catalog.T("app_label_report") + ":"}, a.consoleDebriefReportLines(run, findings, requiredErr)...)
+	}
 
 	lines := []string{
 		renderPlainStage(a.catalog.T("console_stage_launch"),
 			fmt.Sprintf("%s: %s", a.catalog.T("title"), projectName),
 			fmt.Sprintf("%s: %s", a.catalog.T("project_path"), projectPath),
-			fmt.Sprintf("%s: %s", a.catalog.T("status"), strings.ToUpper(string(run.Status))),
+			fmt.Sprintf("%s: %s", a.catalog.T("status"), a.displayUpper(a.scanStatusLabel(run.Status))),
 			fmt.Sprintf("%s: %s", a.catalog.T("scan_mode"), a.modeLabel(run.Profile.Mode)),
 		),
 		"",
@@ -1351,10 +1451,7 @@ func (a *App) renderPlainRunSummary(run domain.ScanRun, project *domain.Project,
 			fmt.Sprintf("%s: %s", a.catalog.T("scan_blocked"), ternary(run.Summary.Blocked, a.catalog.T("scan_blocked_yes"), a.catalog.T("scan_blocked_no"))),
 		),
 		"",
-		renderPlainStage(a.catalog.T("console_stage_debrief"),
-			fmt.Sprintf("%s: %s", a.catalog.T("overview_live_pressure"), a.scanPostureSummary(run)),
-			fmt.Sprintf("%s: %s", a.catalog.T("overview_next_steps"), a.plainNextAction(run, findings, requiredErr)),
-		),
+		renderPlainReportStage(a.catalog.T("console_stage_debrief"), debriefLines...),
 		"",
 	}
 	return strings.Join(lines, "\n")
@@ -1461,6 +1558,92 @@ func (a *App) consoleDebriefModuleSummary(run domain.ScanRun) string {
 		a.catalog.T("module_skipped_count"),
 		skipped,
 	)
+}
+
+func (a *App) consoleDebriefBlockerLines(run domain.ScanRun, requiredErr error) []string {
+	lines := make([]string, 0, 4)
+	if requiredErr != nil {
+		lines = append(lines, a.catalog.T("scan_outcome_partial_explainer"))
+	}
+	for _, module := range run.ModuleResults {
+		if module.Status != domain.ModuleFailed && module.Status != domain.ModuleSkipped {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s • %s", a.technicalUpper(module.Name), trimForSelect(a.moduleSummaryText(module), 72)))
+		if len(lines) >= 3 {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		lines = append(lines, a.catalog.T("scan_report_blockers_clear"))
+	}
+	return lines
+}
+
+func (a *App) consoleDebriefFixPlanLines(run domain.ScanRun, findings []domain.Finding, requiredErr error) []string {
+	steps := make([]string, 0, 4)
+	if requiredErr != nil {
+		steps = append(steps,
+			fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_doctor")),
+			fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_rescan")),
+		)
+		if len(findings) > 0 {
+			steps = append(steps, fmt.Sprintf("3. %s", a.catalog.T("scan_debrief_action_review")))
+		}
+		return steps
+	}
+	if len(findings) > 0 {
+		steps = append(steps,
+			fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_review")),
+			fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_show", run.ID)),
+			fmt.Sprintf("3. %s", a.catalog.T("scan_debrief_action_export")),
+		)
+		return steps
+	}
+	return []string{
+		fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_watch")),
+		fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_show", run.ID)),
+	}
+}
+
+func (a *App) consoleDebriefReportLines(run domain.ScanRun, findings []domain.Finding, requiredErr error) []string {
+	totalModules := max(1, len(run.ModuleResults))
+	_, _, completed, failed, skipped := a.moduleStatusCounts(run.ModuleResults)
+	doneModules := min(totalModules, completed+failed+skipped)
+	coverage := a.catalog.T("scan_confidence_full")
+	verdict := a.catalog.T("scan_outcome_clean")
+	switch {
+	case requiredErr != nil:
+		coverage = a.catalog.T("scan_confidence_partial")
+		verdict = a.catalog.T("scan_outcome_partial")
+	case len(findings) > 0:
+		verdict = a.catalog.T("scan_outcome_findings")
+	}
+	lines := []string{
+		a.catalog.T("scan_outcome_title") + ":",
+		fmt.Sprintf("- %s: %s • %s", a.catalog.T("scan_outcome_verdict"), verdict, coverage),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_progress"), a.missionProgressSummary(doneModules, totalModules)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_phase_verdicts_title"), a.consoleDebriefModuleSummary(run)),
+		fmt.Sprintf("- %s: %s • %s", a.catalog.T("status"), a.displayUpper(a.scanStatusLabel(run.Status)), a.displayUpper(a.scanPostureLabel(run))),
+		fmt.Sprintf("- %s: %s", a.catalog.T("app_label_findings"), a.debriefSeverityBreakdown(run)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_handoff_title"), a.consoleDebriefActionSummary(run, findings, requiredErr)),
+	}
+
+	lines = append(lines, a.catalog.T("scan_report_blockers_title")+":")
+	lines = append(lines, a.consoleDebriefBlockerLines(run, requiredErr)...)
+
+	lines = append(lines, a.catalog.T("scan_report_fix_plan_title")+":", a.catalog.T("scan_report_first_step_title")+":")
+	lines = append(lines, a.consoleDebriefFixPlanLines(run, findings, requiredErr)...)
+
+	prioritized := a.prioritizedFindings(findings, 2)
+	if len(prioritized) > 0 {
+		lines = append(lines, a.catalog.T("scan_spotlight_title")+":")
+		for _, finding := range prioritized {
+			lines = append(lines, fmt.Sprintf("- %s", a.hottestFindingLine(finding, 64)))
+		}
+	}
+
+	return lines
 }
 
 func extractModuleNames(modules []domain.ModuleResult) []string {

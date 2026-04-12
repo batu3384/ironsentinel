@@ -179,7 +179,7 @@ func renderFactRows(theme tuiTheme, width int, facts ...factPair) []string {
 	for _, fact := range facts {
 		labelWidth = maxInt(labelWidth, utf8.RuneCountInString(strings.TrimSpace(fact.Label)))
 	}
-	labelWidth = minInt(maxInt(labelWidth, 6), 12)
+	labelWidth = minInt(maxInt(labelWidth, 6), 18)
 	lines := make([]string, 0, len(facts))
 	for _, fact := range facts {
 		label := strings.TrimSpace(fact.Label)

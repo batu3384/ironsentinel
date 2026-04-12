@@ -292,54 +292,58 @@ func (m scanMissionModel) renderLaunchStrip(width int) string {
 	run := m.consoleRun()
 	done, total := m.progressCounts()
 	_, _, retried := m.app.moduleExecutionCounts(run.ModuleResults)
+	_, runningCount, _, _, _ := m.app.moduleStatusCounts(run.ModuleResults)
 	elapsed := time.Since(m.launchedAt).Round(time.Second)
 	if elapsed < 0 {
 		elapsed = 0
 	}
 
-	posture := strings.ToUpper(m.app.scanPostureLabel(run))
+	posture := m.app.displayUpper(m.app.scanPostureLabel(run))
 	if posture == "" {
-		posture = strings.ToUpper(m.app.catalog.T("scan_mc_status_booting"))
+		posture = m.app.displayUpper(m.app.catalog.T("scan_mc_status_booting"))
 	}
 	activePhase := m.app.catalog.T("scan_phase_general")
 	activeModule := "-"
 	if m.console != nil {
-		activePhase = defaultString(m.console.lastPhase, m.app.catalog.T("scan_phase_general"))
+		activePhase = m.app.phaseDisplayText(m.console.lastPhase, m.console.lastModule)
 		activeModule = defaultString(m.console.lastModule, "-")
 	}
 	activeTool := m.missionActiveTool()
 	status := m.missionStatusText()
-	recentEvent := trimForSelect(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting")), maxInt(24, width-24))
-	isolation := strings.ToUpper(string(m.profile.Isolation))
+	recentEvent := trimForSelect(m.app.operatorText(defaultString(m.console.lastEvent, m.app.catalog.T("scan_mc_waiting"))), maxInt(24, width-24))
+	isolation := m.app.displayUpper(m.app.isolationModeLabel(m.profile.Isolation))
 	if isolation == "" {
-		isolation = strings.ToUpper(string(domain.IsolationAuto))
+		isolation = m.app.displayUpper(m.app.isolationModeLabel(domain.IsolationAuto))
 	}
-	preflight := strings.ToUpper(string(domain.RuntimeCheckWarn))
+	preflight := m.app.displayUpper(m.app.runtimeCheckStatusText(domain.RuntimeCheckWarn))
 	if m.doctor.Ready {
-		preflight = strings.ToUpper(string(domain.RuntimeCheckPass))
+		preflight = m.app.displayUpper(m.app.runtimeCheckStatusText(domain.RuntimeCheckPass))
 	}
 	if len(m.doctor.Missing) > 0 || len(m.doctor.FailedVerification) > 0 || len(m.doctor.FailedAssets) > 0 {
-		preflight = strings.ToUpper(string(domain.RuntimeCheckFail))
+		preflight = m.app.displayUpper(m.app.runtimeCheckStatusText(domain.RuntimeCheckFail))
 	}
-	risk := strings.ToUpper(m.app.liveRiskLabel(
+	risk := m.app.displayUpper(m.app.liveRiskLabel(
 		run.Summary.CountsBySeverity[domain.SeverityCritical],
 		run.Summary.CountsBySeverity[domain.SeverityHigh],
 		run.Summary.CountsBySeverity[domain.SeverityMedium],
 		run.Summary.CountsBySeverity[domain.SeverityLow],
 	))
-	title := strings.ToUpper(activeModule)
+	progressSummary := m.app.missionProgressSummary(done, total)
+	progressRail := m.app.scanProgressRail(done, total, minInt(22, maxInt(12, width/6)))
+	title := m.app.technicalUpper(activeModule)
 	if strings.TrimSpace(title) == "" || title == "-" {
 		title = status
 	}
-	body := fmt.Sprintf("%s • %s • %d/%d", trimForSelect(activePhase, 24), risk, done, total)
+	body := fmt.Sprintf("%s • %s • %s", progressSummary, trimForSelect(activePhase, 24), risk)
 	lines := renderFactRows(m.app.tuiTheme(), width,
+		factPair{Label: m.app.catalog.T("scan_mc_progress"), Value: fmt.Sprintf("%s %s • %s %d", progressRail, progressSummary, strings.ToLower(m.app.catalog.T("module_running_count")), runningCount)},
 		factPair{Label: m.app.catalog.T("status"), Value: status},
 		factPair{Label: m.app.catalog.T("app_label_target"), Value: trimForSelect(m.project.LocationHint, maxInt(24, width-22))},
 		factPair{Label: m.app.phaseLabel(), Value: trimForSelect(activePhase, maxInt(24, width-22))},
-		factPair{Label: m.app.catalog.T("app_label_module"), Value: strings.ToUpper(activeModule)},
+		factPair{Label: m.app.catalog.T("app_label_module"), Value: m.app.technicalUpper(activeModule)},
 		factPair{Label: m.app.toolLabel(), Value: activeTool},
 		factPair{Label: m.app.catalog.T("scan_mc_activity"), Value: recentEvent},
-		factPair{Label: m.app.catalog.T("app_label_health"), Value: fmt.Sprintf("%s • %s • %s", preflight, strings.ToUpper(isolation), posture)},
+		factPair{Label: m.app.catalog.T("app_label_health"), Value: fmt.Sprintf("%s • %s • %s", preflight, isolation, posture)},
 		factPair{Label: m.app.catalog.T("app_label_findings"), Value: fmt.Sprintf("%d • %s %d • %s %s", run.Summary.TotalFindings, strings.ToLower(m.app.catalog.T("module_retried_count")), retried, strings.ToLower(m.app.catalog.T("scan_launch_clock")), elapsed.String())},
 	)
 	return m.renderMissionHeroPanel(width, status, title, body, lines...)
@@ -373,24 +377,24 @@ func (m scanMissionModel) subtitle() string {
 func (m scanMissionModel) missionStatusText() string {
 	switch {
 	case m.aborting && !m.done:
-		return strings.ToUpper(string(domain.ScanCanceled))
+		return m.app.displayUpper(m.app.scanStatusLabel(domain.ScanCanceled))
 	case m.done:
-		return strings.ToUpper(string(m.consoleRun().Status))
+		return m.app.displayUpper(m.app.scanStatusLabel(m.consoleRun().Status))
 	default:
-		return strings.ToUpper(string(domain.ScanRunning))
+		return m.app.displayUpper(m.app.scanStatusLabel(domain.ScanRunning))
 	}
 }
 
 func (m scanMissionModel) missionActiveTool() string {
 	if m.console != nil {
 		if tool := strings.TrimSpace(m.console.lastTool); tool != "" {
-			return strings.ToUpper(tool)
+			return m.app.toolDisplayUpper(tool)
 		}
 		if module := strings.TrimSpace(m.console.lastModule); module != "" {
-			return strings.ToUpper(m.app.moduleToolLabel(module))
+			return m.app.toolDisplayUpper(m.app.moduleToolLabel(module))
 		}
 	}
-	return strings.ToUpper(m.app.moduleToolLabel(""))
+	return m.app.toolDisplayUpper(m.app.moduleToolLabel(""))
 }
 
 func (m scanMissionModel) doneNotice() string {
@@ -504,13 +508,13 @@ func (m scanMissionModel) renderCompactHealthPanel(width int) string {
 
 func (m scanMissionModel) renderUltraCompactMissionBoard(width int) string {
 	run := m.consoleRun()
-	activeLane := strings.ToUpper(defaultString(m.console.lastPhase, m.app.catalog.T("scan_phase_general")))
-	activeModule := strings.ToUpper(defaultString(m.console.lastModule, "-"))
+	activeLane := m.app.displayUpper(m.app.phaseDisplayText(m.console.lastPhase, m.console.lastModule))
+	activeModule := m.app.technicalUpper(defaultString(m.console.lastModule, "-"))
 	metrics := m.runtimeMetrics()
 	lines := []string{
 		fmt.Sprintf("%s: %s • %s", m.app.catalog.T("scan_mode_live_brief_title"), trimForSelect(m.project.DisplayName, maxInt(14, width-28)), trimForSelect(activeLane, 22)),
 		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_execution_title"), trimForSelect(activeModule, maxInt(12, width-24))),
-		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_threat_title"), strings.ToUpper(m.app.liveRiskLabel(
+		fmt.Sprintf("%s: %s", m.app.catalog.T("scan_mode_live_threat_title"), m.app.displayUpper(m.app.liveRiskLabel(
 			run.Summary.CountsBySeverity[domain.SeverityCritical],
 			run.Summary.CountsBySeverity[domain.SeverityHigh],
 			run.Summary.CountsBySeverity[domain.SeverityMedium],
