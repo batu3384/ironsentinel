@@ -88,14 +88,6 @@ func (m appShellModel) currentFindingsCategoryFilter() string {
 	return runFindingCategoryFilters[m.findingsCategoryIdx]
 }
 
-func (m appShellModel) currentFindingsCategoryFilterLabel() string {
-	filter := m.currentFindingsCategoryFilter()
-	if filter == "all" {
-		return m.app.catalog.T("artifact_filter_all")
-	}
-	return m.app.categoryLabel(domain.FindingCategory(filter))
-}
-
 func (m appShellModel) renderRunQueueSummary() string {
 	counts := m.app.countRunStatuses(m.snapshot.Portfolio.Runs)
 	return fmt.Sprintf("%s: %d • %s: %d • %s: %d",

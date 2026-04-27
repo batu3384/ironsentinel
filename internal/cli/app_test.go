@@ -1285,6 +1285,15 @@ func TestCompatibilityCommandsUsePrimaryConsoleShellWhenInteractive(t *testing.T
 	}
 }
 
+func TestScanCommandExposesStrictAlias(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	cmd := app.scanCommand()
+
+	if cmd.Flags().Lookup("strict") == nil {
+		t.Fatal("expected scan command to expose --strict as a strict profile alias")
+	}
+}
+
 func TestInteractiveScanCommandUsesLegacyCompatibilityShellState(t *testing.T) {
 	app, project := newTestTUIApp(t)
 	app.languageConfigured = true

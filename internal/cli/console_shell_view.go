@@ -71,6 +71,10 @@ func (m consoleShellModel) renderMissionSurfaceContent(mission scanMissionModel,
 
 	header := m.app.renderBrandConsoleMissionHeader(width, mission.subtitle())
 	launchStrip := mission.renderLaunchStrip(width)
+	if m.stage == consoleStageDebrief && mission.height < 34 {
+		launchStrip = ""
+	}
+	decisionStrip := mission.renderMissionDecisionStrip(width)
 	footer := theme.helpStyle().Render(m.consoleMissionFooter(mission))
 	if strings.TrimSpace(mission.notice) != "" {
 		footer = lipgloss.JoinVertical(lipgloss.Left, theme.noticeStyle(mission.alert).Render(mission.notice), footer)
@@ -85,7 +89,7 @@ func (m consoleShellModel) renderMissionSurfaceContent(mission scanMissionModel,
 		healthPanel = mission.renderHealthFooter(width)
 	}
 
-	availableBodyHeight := maxInt(0, mission.height-lipgloss.Height(header)-lipgloss.Height(launchStrip)-lipgloss.Height(footer))
+	availableBodyHeight := maxInt(0, mission.height-lipgloss.Height(header)-lipgloss.Height(launchStrip)-lipgloss.Height(decisionStrip)-lipgloss.Height(footer))
 	boardHeight, debriefHeight, healthHeight := missionSurfaceSectionHeights(availableBodyHeight, lipgloss.Height(debriefPanel), lipgloss.Height(healthPanel))
 	boardPanel := m.renderMissionBodyPanel(mission, width, boardHeight)
 	debriefBlock := ""
@@ -97,14 +101,14 @@ func (m consoleShellModel) renderMissionSurfaceContent(mission scanMissionModel,
 		healthBlock = fitRenderedBlock(healthPanel, healthHeight)
 	}
 
-	if overflow := mission.height - lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, nonEmptyStrings(header, launchStrip, boardPanel, debriefBlock, healthBlock, footer)...)); overflow < 0 {
+	if overflow := mission.height - lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, nonEmptyStrings(header, launchStrip, decisionStrip, boardPanel, debriefBlock, healthBlock, footer)...)); overflow < 0 {
 		launchStrip = fitRenderedBlock(launchStrip, maxInt(3, lipgloss.Height(launchStrip)+overflow))
 	}
-	if overflow := mission.height - lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, nonEmptyStrings(header, launchStrip, boardPanel, debriefBlock, healthBlock, footer)...)); overflow < 0 {
+	if overflow := mission.height - lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, nonEmptyStrings(header, launchStrip, decisionStrip, boardPanel, debriefBlock, healthBlock, footer)...)); overflow < 0 {
 		boardPanel = fitRenderedBlock(boardPanel, maxInt(1, lipgloss.Height(boardPanel)+overflow))
 	}
 
-	sections := []string{header, launchStrip}
+	sections := []string{header, launchStrip, decisionStrip}
 	if strings.TrimSpace(boardPanel) != "" {
 		sections = append(sections, boardPanel)
 	}

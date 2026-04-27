@@ -180,6 +180,70 @@ func TestExportHTMLIncludesModuleExecutionDetails(t *testing.T) {
 	}
 }
 
+func TestExportHTMLIncludesOperationalDecisionAndRemediationPlan(t *testing.T) {
+	run := domain.ScanRun{
+		ID:        "run-actionable-html",
+		ProjectID: "prj-1",
+		Status:    domain.ScanCompleted,
+		Profile: domain.ScanProfile{
+			Mode:     domain.ModeSafe,
+			Coverage: domain.CoveragePremium,
+			Modules:  []string{"gitleaks", "osv-scanner", "zaproxy"},
+		},
+		Summary: domain.ScanSummary{
+			TotalFindings: 1,
+			CountsBySeverity: map[domain.Severity]int{
+				domain.SeverityHigh: 1,
+			},
+		},
+		ModuleResults: []domain.ModuleResult{
+			{Name: "gitleaks", Status: domain.ModuleCompleted, FindingCount: 1, Summary: "Secrets checked"},
+			{Name: "osv-scanner", Status: domain.ModuleCompleted, Summary: "Dependencies checked"},
+			{Name: "zaproxy", Status: domain.ModuleSkipped, FailureKind: domain.ModuleFailureSkipped, Summary: "Target URL not configured"},
+		},
+	}
+	findings := []domain.Finding{
+		{
+			Fingerprint: "fp-secret",
+			Severity:    domain.SeverityHigh,
+			Category:    domain.CategorySecret,
+			Module:      "gitleaks",
+			Title:       "Hardcoded secret",
+			Location:    ".env",
+			Remediation: "Rotate the exposed secret and remove it from history.",
+			Priority:    9.4,
+		},
+	}
+	delta := domain.CalculateRunDelta(findings, nil, run.ID, "", run.ProjectID)
+	output, err := Export("html", testRunReport(run, findings, delta))
+	if err != nil {
+		t.Fatalf("unexpected export error: %v", err)
+	}
+	for _, want := range []string{
+		"Operational decision",
+		"Execution",
+		"Coverage",
+		"Policy",
+		"Runtime",
+		"Remediation plan",
+		"P0",
+		"Validation",
+		"ironsentinel scan . --strict",
+		"ironsentinel campaigns create",
+		"--project prj-1",
+		"--run run-actionable-html",
+		"--finding fp-secret",
+		"Target URL not configured",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected actionable HTML report to contain %q", want)
+		}
+	}
+	if strings.Contains(output, "campaign create --from-run") {
+		t.Fatalf("HTML report should not emit the removed campaign command")
+	}
+}
+
 func TestExportHTMLSortsFindingsTableByPriority(t *testing.T) {
 	run := domain.ScanRun{ID: "run-4", ProjectID: "prj-1"}
 	findings := []domain.Finding{

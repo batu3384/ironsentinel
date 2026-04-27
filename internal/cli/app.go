@@ -1074,6 +1074,7 @@ func (a *App) scanCommand() *cobra.Command {
 		failOnNew      string
 		baselineRun    string
 		policyID       string
+		strict         bool
 		requireBundle  bool
 		strictVersions bool
 		allowBuild     bool
@@ -1092,6 +1093,10 @@ func (a *App) scanCommand() *cobra.Command {
 		Short: a.catalog.T("scan_title"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if strict {
+				strictVersions = true
+				requireBundle = true
+			}
 			path := "."
 			if len(args) > 0 {
 				path = args[0]
@@ -1224,6 +1229,7 @@ func (a *App) scanCommand() *cobra.Command {
 	command.Flags().StringVar(&failOnNew, "fail-on-new", "", a.catalog.T("scan_fail_on_new_flag"))
 	command.Flags().StringVar(&baselineRun, "baseline", "", a.catalog.T("scan_baseline_flag"))
 	command.Flags().StringVar(&policyID, "policy", "", a.catalog.T("scan_policy_flag"))
+	command.Flags().BoolVar(&strict, "strict", false, a.catalog.T("scan_strict_flag"))
 	command.Flags().BoolVar(&requireBundle, "require-bundle", false, a.catalog.T("scan_require_bundle_flag"))
 	command.Flags().BoolVar(&strictVersions, "strict-versions", false, a.catalog.T("scan_strict_versions_flag"))
 	command.Flags().BoolVar(&allowBuild, "allow-build", false, a.catalog.T("scan_allow_build_flag"))

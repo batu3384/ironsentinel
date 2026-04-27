@@ -150,20 +150,6 @@ func (s *StateStore) runMigration(migration schemaMigration) error {
 	return tx.Commit()
 }
 
-func (s *StateStore) isEmpty() (bool, error) {
-	for _, table := range []string{"projects", "runs", "findings", "suppressions", "triage"} {
-		query := `SELECT COUNT(1) FROM ` + table
-		var count int
-		if err := s.db.QueryRow(query).Scan(&count); err != nil {
-			return false, err
-		}
-		if count > 0 {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
 func (s *StateStore) CreateProject(project domain.Project) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

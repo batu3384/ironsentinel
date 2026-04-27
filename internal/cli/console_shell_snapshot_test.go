@@ -89,6 +89,10 @@ func TestConsoleShellMissionSnapshot(t *testing.T) {
 		app.catalog.T("app_label_module"),
 		app.toolLabel(),
 		app.catalog.T("scan_mc_activity"),
+		app.catalog.T("scan_decision_execution"),
+		app.catalog.T("scan_decision_coverage"),
+		app.catalog.T("scan_decision_policy"),
+		app.catalog.T("scan_decision_runtime"),
 		"SEMGREP",
 		project.DisplayName,
 	} {
@@ -110,11 +114,16 @@ func TestConsoleShellDebriefDrawerSnapshot(t *testing.T) {
 		model.app.catalog.T("scan_debrief_title"),
 		model.app.catalog.T("app_label_report"),
 		model.app.catalog.T("scan_mc_progress"),
+		model.app.catalog.T("scan_decision_execution"),
+		model.app.catalog.T("scan_decision_coverage"),
+		model.app.catalog.T("scan_decision_policy"),
+		model.app.catalog.T("scan_decision_runtime"),
 		model.app.catalog.T("findings_title"),
 		model.app.catalog.T("scan_mc_handoff_title"),
 		model.app.catalog.T("scan_mc_activity"),
 		model.mission.project.DisplayName,
-		model.app.catalog.T("scan_spotlight_title"),
+		"P0",
+		model.app.catalog.T("scan_report_validation_title"),
 	}
 	if !containsAll(out, fragments...) {
 		t.Fatalf("console shell debrief drawer snapshot is missing expected sections: %v\n%s", missingFragments(out, fragments...), string(out))

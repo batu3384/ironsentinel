@@ -458,6 +458,22 @@ func (m scanMissionModel) renderMissionBoard(width, maxHeight int) string {
 	return m.renderMissionBoardWithViewport(width, maxHeight, m.renderDetailViewport)
 }
 
+func (m scanMissionModel) renderMissionDecisionStrip(width int) string {
+	run := m.consoleRun()
+	findings := []domain.Finding{}
+	if m.console != nil {
+		findings = m.console.recentFindings
+	}
+	if m.done && len(m.findings) > 0 {
+		findings = m.findings
+	}
+	lines := m.app.consoleDecisionAxisLines(run, findings, m.requiredErr)
+	for index, line := range lines {
+		lines[index] = strings.TrimPrefix(line, "- ")
+	}
+	return renderMissionBox(m.app.catalog.T("scan_outcome_verdict"), strings.Join(lines, "\n"))
+}
+
 func (m scanMissionModel) renderMissionBoardWithViewport(width, maxHeight int, renderDetail func(int, string) string) string {
 	theme := m.app.tuiTheme()
 	gap := len(theme.gap())

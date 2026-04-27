@@ -1569,7 +1569,11 @@ func (a *App) consoleDebriefBlockerLines(run domain.ScanRun, requiredErr error) 
 		if module.Status != domain.ModuleFailed && module.Status != domain.ModuleSkipped {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("- %s • %s", a.technicalUpper(module.Name), trimForSelect(a.moduleSummaryText(module), 72)))
+		moduleName := strings.TrimSpace(module.Name)
+		if upper := a.technicalUpper(moduleName); upper != "" && upper != moduleName {
+			moduleName = fmt.Sprintf("%s (%s)", moduleName, upper)
+		}
+		lines = append(lines, fmt.Sprintf("- %s • %s", moduleName, trimForSelect(a.moduleSummaryText(module), 72)))
 		if len(lines) >= 3 {
 			break
 		}
@@ -1580,30 +1584,159 @@ func (a *App) consoleDebriefBlockerLines(run domain.ScanRun, requiredErr error) 
 	return lines
 }
 
+func (a *App) consoleDecisionAxisLines(run domain.ScanRun, findings []domain.Finding, requiredErr error) []string {
+	return []string{
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_decision_execution"), a.consoleExecutionDecision(run)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_decision_coverage"), a.consoleCoverageDecision(run, requiredErr)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_decision_policy"), a.consolePolicyDecision(run, findings, requiredErr)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_decision_runtime"), a.consoleRuntimeDecision(run, requiredErr)),
+	}
+}
+
+func (a *App) consoleExecutionDecision(run domain.ScanRun) string {
+	return a.displayUpper(a.scanStatusLabel(run.Status))
+}
+
+func (a *App) consoleCoverageDecision(run domain.ScanRun, requiredErr error) string {
+	failed, skipped, _ := a.moduleExecutionCounts(run.ModuleResults)
+	if requiredErr != nil || failed > 0 || skipped > 0 {
+		parts := []string{a.catalog.T("scan_decision_partial")}
+		if failed > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", strings.ToLower(a.catalog.T("module_failed_count")), failed))
+		}
+		if skipped > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", strings.ToLower(a.catalog.T("module_skipped_count")), skipped))
+		}
+		return strings.Join(parts, " • ")
+	}
+	return a.catalog.T("scan_decision_complete")
+}
+
+func (a *App) consolePolicyDecision(run domain.ScanRun, findings []domain.Finding, requiredErr error) string {
+	if requiredErr != nil {
+		return a.catalog.T("scan_decision_failed") + " • " + a.catalog.T("scan_outcome_partial")
+	}
+	critical := run.Summary.CountsBySeverity[domain.SeverityCritical]
+	high := run.Summary.CountsBySeverity[domain.SeverityHigh]
+	switch {
+	case critical > 0 || high > 0:
+		criticalHigh := fmt.Sprintf("%s/%s", strings.ToLower(a.catalog.T("summary_critical")), strings.ToLower(a.catalog.T("summary_high")))
+		return fmt.Sprintf("%s • %d %s", a.catalog.T("scan_decision_failed"), critical+high, criticalHigh)
+	case len(findings) > 0:
+		return fmt.Sprintf("%s • %d %s", a.catalog.T("scan_decision_review"), len(findings), strings.ToLower(a.catalog.T("app_label_findings")))
+	default:
+		return a.catalog.T("scan_decision_passed")
+	}
+}
+
+func (a *App) consoleRuntimeDecision(run domain.ScanRun, requiredErr error) string {
+	failed, skipped, _ := a.moduleExecutionCounts(run.ModuleResults)
+	switch {
+	case requiredErr != nil || failed > 0:
+		return a.catalog.T("scan_decision_degraded")
+	case skipped > 0:
+		return a.catalog.T("scan_decision_degraded") + " • " + a.catalog.T("scan_decision_partial")
+	default:
+		return a.catalog.T("scan_decision_trusted")
+	}
+}
+
+func (a *App) consoleValidationCommand(run domain.ScanRun, finding domain.Finding) string {
+	module := strings.TrimSpace(finding.Module)
+	if module != "" {
+		return fmt.Sprintf("ironsentinel scan . --module %s --strict", module)
+	}
+	if strings.TrimSpace(run.ID) != "" {
+		return fmt.Sprintf("ironsentinel scan . --strict # after run %s", run.ID)
+	}
+	return "ironsentinel scan . --strict"
+}
+
+func (a *App) consoleDebriefFirstStep(run domain.ScanRun, findings []domain.Finding, requiredErr error) string {
+	if requiredErr != nil {
+		return "P0: " + a.catalog.T("scan_debrief_action_doctor")
+	}
+	if finding, ok := a.nextReviewFinding(findings); ok {
+		priority := "P1"
+		if finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret {
+			priority = "P0"
+		}
+		return fmt.Sprintf("%s: %s", priority, trimForSelect(a.displayFindingTitle(finding), 72))
+	}
+	return "P2: " + a.catalog.T("scan_debrief_action_watch")
+}
+
 func (a *App) consoleDebriefFixPlanLines(run domain.ScanRun, findings []domain.Finding, requiredErr error) []string {
 	steps := make([]string, 0, 4)
 	if requiredErr != nil {
 		steps = append(steps,
-			fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_doctor")),
-			fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_rescan")),
+			fmt.Sprintf("- P0: %s", a.catalog.T("scan_debrief_action_doctor")),
+			fmt.Sprintf("  %s: ironsentinel runtime doctor --mode safe --require-integrity", a.catalog.T("scan_report_validation_title")),
+			fmt.Sprintf("- P1: %s", a.catalog.T("scan_debrief_action_rescan")),
+			fmt.Sprintf("  %s: ironsentinel scan . --strict", a.catalog.T("scan_report_validation_title")),
 		)
 		if len(findings) > 0 {
-			steps = append(steps, fmt.Sprintf("3. %s", a.catalog.T("scan_debrief_action_review")))
+			steps = append(steps, fmt.Sprintf("- P2: %s", a.catalog.T("scan_debrief_action_review")))
 		}
 		return steps
 	}
 	if len(findings) > 0 {
+		for index, finding := range a.prioritizedFindings(findings, 2) {
+			priority := "P1"
+			if index == 0 && (finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret) {
+				priority = "P0"
+			}
+			summary := strings.TrimSpace(finding.Remediation)
+			if summary == "" {
+				summary = a.catalog.T("scan_debrief_action_review")
+			}
+			steps = append(steps,
+				fmt.Sprintf("- %s: %s — %s", priority, trimForSelect(a.displayFindingTitle(finding), 54), trimForSelect(summary, 72)),
+				fmt.Sprintf("  %s: %s", a.catalog.T("scan_report_validation_title"), a.consoleValidationCommand(run, finding)),
+			)
+		}
 		steps = append(steps,
-			fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_review")),
-			fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_show", run.ID)),
-			fmt.Sprintf("3. %s", a.catalog.T("scan_debrief_action_export")),
+			fmt.Sprintf("- P1: %s", a.catalog.T("scan_debrief_action_show", run.ID)),
+			fmt.Sprintf("  %s: %s", a.catalog.T("scan_report_validation_title"), a.consoleCampaignCreateCommand(run, findings)),
 		)
+		if failed, skipped, _ := a.moduleExecutionCounts(run.ModuleResults); failed > 0 || skipped > 0 {
+			steps = append(steps,
+				fmt.Sprintf("- P2: %s", a.catalog.T("scan_report_blockers_title")),
+				fmt.Sprintf("  %s: ironsentinel scan . --strict", a.catalog.T("scan_report_validation_title")),
+			)
+		}
 		return steps
 	}
 	return []string{
-		fmt.Sprintf("1. %s", a.catalog.T("scan_debrief_action_watch")),
-		fmt.Sprintf("2. %s", a.catalog.T("scan_debrief_action_show", run.ID)),
+		fmt.Sprintf("- P2: %s", a.catalog.T("scan_debrief_action_watch")),
+		fmt.Sprintf("  %s: ironsentinel scan . --strict", a.catalog.T("scan_report_validation_title")),
+		fmt.Sprintf("- P3: %s", a.catalog.T("scan_debrief_action_show", run.ID)),
 	}
+}
+
+func (a *App) consoleCampaignCreateCommand(run domain.ScanRun, findings []domain.Finding) string {
+	projectID := strings.TrimSpace(run.ProjectID)
+	if projectID == "" {
+		projectID = "<project-id>"
+	}
+	runID := strings.TrimSpace(run.ID)
+	if runID == "" {
+		runID = "<run-id>"
+	}
+
+	fingerprint := "<finding-fingerprint>"
+	if prioritized := a.prioritizedFindings(findings, 1); len(prioritized) > 0 {
+		if candidate := strings.TrimSpace(prioritized[0].Fingerprint); candidate != "" {
+			fingerprint = candidate
+		}
+	}
+
+	return fmt.Sprintf(
+		`ironsentinel campaigns create --project %s --run %s --title "High-priority remediation" --finding %s`,
+		projectID,
+		runID,
+		fingerprint,
+	)
 }
 
 func (a *App) consoleDebriefReportLines(run domain.ScanRun, findings []domain.Finding, requiredErr error) []string {
@@ -1622,18 +1755,24 @@ func (a *App) consoleDebriefReportLines(run domain.ScanRun, findings []domain.Fi
 	lines := []string{
 		a.catalog.T("scan_outcome_title") + ":",
 		fmt.Sprintf("- %s: %s • %s", a.catalog.T("scan_outcome_verdict"), verdict, coverage),
-		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_progress"), a.missionProgressSummary(doneModules, totalModules)),
+	}
+	lines = append(lines, a.consoleDecisionAxisLines(run, findings, requiredErr)...)
+	lines = append(lines,
 		fmt.Sprintf("- %s: %s", a.catalog.T("scan_phase_verdicts_title"), a.consoleDebriefModuleSummary(run)),
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_handoff_title"), a.consoleDebriefActionSummary(run, findings, requiredErr)),
+		a.catalog.T("scan_spotlight_title")+":",
+		a.catalog.T("scan_report_fix_plan_title")+":",
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_report_first_step_title"), a.consoleDebriefFirstStep(run, findings, requiredErr)),
+		fmt.Sprintf("- %s: ironsentinel scan . --strict", a.catalog.T("scan_report_validation_title")),
+		a.catalog.T("scan_report_blockers_title")+":",
+	)
+	lines = append(lines, a.consoleDebriefBlockerLines(run, requiredErr)...)
+	lines = append(lines, a.consoleDebriefFixPlanLines(run, findings, requiredErr)...)
+	lines = append(lines,
+		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_progress"), a.missionProgressSummary(doneModules, totalModules)),
 		fmt.Sprintf("- %s: %s • %s", a.catalog.T("status"), a.displayUpper(a.scanStatusLabel(run.Status)), a.displayUpper(a.scanPostureLabel(run))),
 		fmt.Sprintf("- %s: %s", a.catalog.T("app_label_findings"), a.debriefSeverityBreakdown(run)),
-		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_handoff_title"), a.consoleDebriefActionSummary(run, findings, requiredErr)),
-	}
-
-	lines = append(lines, a.catalog.T("scan_report_blockers_title")+":")
-	lines = append(lines, a.consoleDebriefBlockerLines(run, requiredErr)...)
-
-	lines = append(lines, a.catalog.T("scan_report_fix_plan_title")+":", a.catalog.T("scan_report_first_step_title")+":")
-	lines = append(lines, a.consoleDebriefFixPlanLines(run, findings, requiredErr)...)
+	)
 
 	prioritized := a.prioritizedFindings(findings, 2)
 	if len(prioritized) > 0 {

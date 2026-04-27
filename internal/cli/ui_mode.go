@@ -24,11 +24,6 @@ const (
 	colorThemeLight colorTheme = "light"
 )
 
-var selectableColorThemes = []colorTheme{
-	colorThemeDark,
-	colorThemeLight,
-}
-
 var selectableUIModes = []uiMode{
 	uiModeStandard,
 	uiModePlain,
@@ -104,8 +99,8 @@ func (a *App) SaveColorTheme(theme string) error {
 }
 
 type tuiTheme struct {
-	mode         uiMode
-	colorTheme   colorTheme
+	mode       uiMode
+	colorTheme colorTheme
 }
 
 func newTUITheme(mode uiMode, theme colorTheme) tuiTheme {
@@ -147,19 +142,19 @@ func (t tuiTheme) dark() bool {
 
 // colorPalette defines the color scheme for a theme
 type colorPalette struct {
-	primary      string
-	secondary    string
-	accent       string
-	warning      string
-	error        string
-	success      string
-	muted        string
-	highlight    string
-	tabActiveBG  string
-	tabActiveFG  string
-	panelBorder  string
-	panelBG      string
-	heroBG       string
+	primary     string
+	secondary   string
+	accent      string
+	warning     string
+	error       string
+	success     string
+	muted       string
+	highlight   string
+	tabActiveBG string
+	tabActiveFG string
+	panelBorder string
+	panelBG     string
+	heroBG      string
 }
 
 // Dark theme palette (default)
@@ -189,7 +184,7 @@ var lightPalette = colorPalette{
 	success:     "34",  // Green
 	muted:       "247", // Gray
 	highlight:   "32",  // Green
-	tabActiveBG: "21",   // Dark blue bg
+	tabActiveBG: "21",  // Dark blue bg
 	tabActiveFG: "231", // White text
 	panelBorder: "250", // Light gray border
 	panelBG:     "255", // White bg

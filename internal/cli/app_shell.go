@@ -370,8 +370,18 @@ func (a *App) launchPrimaryTUI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := finalModel.(consoleShellModel); !ok {
+	model, ok := finalModel.(consoleShellModel)
+	if !ok {
 		return fmt.Errorf("unexpected console shell model type")
+	}
+	if model.mission.cancel != nil {
+		model.mission.cancel()
+		if model.mission.doneCh != nil {
+			select {
+			case <-model.mission.doneCh:
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
 	}
 	return nil
 }

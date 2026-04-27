@@ -1316,7 +1316,7 @@ func (a *App) failedOrSkippedModuleSummary(modules []domain.ModuleResult) string
 }
 
 func (a *App) severityBadge(severity domain.Severity) string {
-	label := strings.ToUpper(a.severityLabel(severity))
+	label := a.displayUpper(a.severityLabel(severity))
 	if a.colorDisabled() {
 		return a.plainBadge(label)
 	}
@@ -1344,7 +1344,7 @@ func (a *App) findingStatusBadge(status domain.FindingStatus) string {
 	if status == "" {
 		status = domain.FindingOpen
 	}
-	label := strings.ToUpper(a.findingStatusLabel(status))
+	label := a.displayUpper(a.findingStatusLabel(status))
 	if a.colorDisabled() {
 		return a.plainBadge(label)
 	}
@@ -1363,7 +1363,7 @@ func (a *App) findingStatusBadge(status domain.FindingStatus) string {
 }
 
 func (a *App) modeBadge(mode domain.ScanMode) string {
-	label := strings.ToUpper(a.modeLabel(mode))
+	label := a.displayUpper(a.modeLabel(mode))
 	if a.colorDisabled() {
 		return a.plainBadge(label)
 	}

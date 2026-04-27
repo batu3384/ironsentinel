@@ -345,6 +345,8 @@ func exportHTML(report domain.RunReport) string {
 	moduleStats := report.ModuleStats
 	moduleSection := renderModuleSection(moduleRows)
 	executiveSummary := renderExecutiveSummary(priorityFindings)
+	operationalDecision := renderOperationalDecisionSection(report, findings)
+	remediationPlan := renderRemediationPlanSection(report, priorityFindings)
 	severityOverview := renderSeverityOverview(report.Run)
 	trendChart := renderTrendChart(report.Run, report.Trends)
 	heatmap := renderHeatmap(findings)
@@ -380,6 +382,14 @@ func exportHTML(report domain.RunReport) string {
     .heat-row { display:grid; grid-template-columns: 120px repeat(4, 1fr); gap:6px; align-items:center; }
     .heat-cell { padding:12px; border-radius:10px; text-align:center; }
     .finding-card { border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:14px; margin-top:14px; background:rgba(255,255,255,0.02); }
+    .decision-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px; }
+    .decision-card { border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:14px; background:rgba(255,255,255,0.025); }
+    .decision-card strong { display:block; color:#5eead4; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .decision-card span { display:block; margin-top:8px; }
+    .plan-list { display:grid; gap:12px; }
+    .plan-item { border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:14px; background:rgba(255,255,255,0.025); }
+    .plan-item b { color:#ffd166; }
+    code { color:#5eead4; background:rgba(94,234,212,0.08); border:1px solid rgba(94,234,212,0.16); padding:2px 6px; border-radius:8px; }
     details summary { cursor:pointer; font-weight:600; }
     .badge { display:inline-block; padding:4px 10px; border-radius:999px; margin-right:6px; font-size:12px; }
     .sev-critical { background:#4c0b1b; color:#ff8aa1; }
@@ -415,6 +425,14 @@ func exportHTML(report domain.RunReport) string {
       %s
     </section>
   </div>
+  <section class="card" style="margin-top:24px;">
+    <h2>Operational decision</h2>
+    %s
+  </section>
+  <section class="card" style="margin-top:24px;">
+    <h2>Remediation plan</h2>
+    %s
+  </section>
   <section class="card" style="margin-top:24px;">
     <h2>Compliance mapping</h2>
     %s
@@ -453,6 +471,8 @@ func exportHTML(report domain.RunReport) string {
 		severityOverview,
 		trendChart,
 		heatmap,
+		operationalDecision,
+		remediationPlan,
 		complianceSection,
 		moduleSection,
 		strings.Join(rows, ""),
@@ -507,6 +527,130 @@ func renderResolvedSection(rows []string) string {
     </thead>
     <tbody>%s</tbody>
   </table>`, strings.Join(rows, ""))
+}
+
+func renderOperationalDecisionSection(report domain.RunReport, findings []domain.Finding) string {
+	stats := ModuleExecutionStats(report.Run.ModuleResults)
+	critical := report.Run.Summary.CountsBySeverity[domain.SeverityCritical]
+	high := report.Run.Summary.CountsBySeverity[domain.SeverityHigh]
+	coverage := "Complete for selected profile"
+	runtime := "Trusted for selected profile"
+	if stats["failed"] > 0 || stats["skipped"] > 0 {
+		coverage = fmt.Sprintf("Partial coverage - failed modules: %d, skipped modules: %d", stats["failed"], stats["skipped"])
+		runtime = "Degraded - review module blockers before trusting full coverage"
+	}
+	policy := "Passed"
+	switch {
+	case critical > 0 || high > 0:
+		policy = fmt.Sprintf("Failed - %d critical/high findings require action", critical+high)
+	case len(findings) > 0:
+		policy = fmt.Sprintf("Needs review - %d findings recorded", len(findings))
+	}
+	cards := []string{
+		renderDecisionCard("Execution", strings.ToUpper(string(report.Run.Status))),
+		renderDecisionCard("Coverage", coverage),
+		renderDecisionCard("Policy", policy),
+		renderDecisionCard("Runtime", runtime),
+	}
+	blockers := renderScopeBlockerList(report.Run.ModuleResults)
+	if blockers != "" {
+		cards = append(cards, `<div class="decision-card"><strong>Scope blockers</strong>`+blockers+`</div>`)
+	}
+	return `<div class="decision-grid">` + strings.Join(cards, "") + `</div>`
+}
+
+func renderDecisionCard(title, value string) string {
+	return fmt.Sprintf(`<div class="decision-card"><strong>%s</strong><span>%s</span></div>`, htmlEscape(title), htmlEscape(value))
+}
+
+func renderScopeBlockerList(modules []domain.ModuleResult) string {
+	items := make([]string, 0, 3)
+	for _, module := range modules {
+		if module.Status != domain.ModuleFailed && module.Status != domain.ModuleSkipped {
+			continue
+		}
+		summary := strings.TrimSpace(module.Summary)
+		if summary == "" {
+			summary = string(module.FailureKind)
+		}
+		items = append(items, fmt.Sprintf(`<li><strong>%s</strong>: %s</li>`, htmlEscape(module.Name), htmlEscape(summary)))
+		if len(items) >= 3 {
+			break
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return `<ul>` + strings.Join(items, "") + `</ul>`
+}
+
+func renderRemediationPlanSection(report domain.RunReport, findings []domain.Finding) string {
+	items := make([]string, 0, 4)
+	for index, finding := range findings[:min(2, len(findings))] {
+		priority := "P1"
+		if index == 0 && (finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret) {
+			priority = "P0"
+		}
+		remediation := strings.TrimSpace(finding.Remediation)
+		if remediation == "" {
+			remediation = "Review and remediate the finding from its source module."
+		}
+		items = append(items, fmt.Sprintf(
+			`<div class="plan-item"><b>%s</b> %s<p>%s</p><p><strong>Validation:</strong> <code>%s</code></p></div>`,
+			htmlEscape(priority),
+			htmlEscape(finding.Title),
+			htmlEscape(remediation),
+			htmlEscape(reportValidationCommand(report.Run, finding)),
+		))
+	}
+	if len(findings) > 0 {
+		items = append(items, fmt.Sprintf(
+			`<div class="plan-item"><b>P1</b> Create remediation campaign<p>Group the top findings into a trackable campaign.</p><p><strong>Validation:</strong> <code>%s</code></p></div>`,
+			htmlEscape(reportCampaignCreateCommand(report.Run, findings)),
+		))
+	}
+	if blockers := renderScopeBlockerList(report.Run.ModuleResults); blockers != "" {
+		items = append(items, `<div class="plan-item"><b>P2</b> Close coverage blockers<p>These are not security findings by themselves, but they reduce trust in the run.</p>`+blockers+`<p><strong>Validation:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
+	}
+	if len(items) == 0 {
+		items = append(items, `<div class="plan-item"><b>P2</b> Keep watching<p>No findings require remediation. Re-run after meaningful code or dependency changes.</p><p><strong>Validation:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
+	}
+	return `<div class="plan-list">` + strings.Join(items, "") + `</div>`
+}
+
+func reportValidationCommand(run domain.ScanRun, finding domain.Finding) string {
+	module := strings.TrimSpace(finding.Module)
+	if module != "" {
+		return fmt.Sprintf("ironsentinel scan . --module %s --strict", module)
+	}
+	if strings.TrimSpace(run.ID) != "" {
+		return fmt.Sprintf("ironsentinel scan . --strict # after run %s", run.ID)
+	}
+	return "ironsentinel scan . --strict"
+}
+
+func reportCampaignCreateCommand(run domain.ScanRun, findings []domain.Finding) string {
+	projectID := strings.TrimSpace(run.ProjectID)
+	if projectID == "" {
+		projectID = "<project-id>"
+	}
+	runID := strings.TrimSpace(run.ID)
+	if runID == "" {
+		runID = "<run-id>"
+	}
+	fingerprint := "<finding-fingerprint>"
+	for _, finding := range findings {
+		if candidate := strings.TrimSpace(finding.Fingerprint); candidate != "" {
+			fingerprint = candidate
+			break
+		}
+	}
+	return fmt.Sprintf(
+		`ironsentinel campaigns create --project %s --run %s --title "High-priority remediation" --finding %s`,
+		projectID,
+		runID,
+		fingerprint,
+	)
 }
 
 func renderExecutiveSummary(findings []domain.Finding) string {
