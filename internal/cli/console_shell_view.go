@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/batu3384/ironsentinel/internal/domain"
 )
 
 func (m consoleShellModel) View() string {
@@ -30,13 +32,50 @@ func (m consoleShellModel) renderLaunchSurface() string {
 		theme.subtitleStyle().Render(m.app.catalog.T("console_launch_subtitle")),
 		theme.subtitleStyle().Render(fmt.Sprintf("%s: %s", m.app.catalog.T("console_launch_target_label"), projectLabel)),
 		theme.subtitleStyle().Render(fmt.Sprintf("%s: %s", m.app.catalog.T("console_launch_readiness_label"), m.launchReadinessLabel())),
+	}
+	if project, ok := m.selectedProject(); ok {
+		lines = append(lines, m.renderLaunchPlanLines(project)...)
+	}
+	lines = append(lines,
 		theme.eyebrowStyle().Render(m.app.catalog.T("console_launch_primary_action")),
 		theme.subtitleStyle().Render(m.app.catalog.T("console_launch_hint")),
-	}
+	)
 	if strings.TrimSpace(m.launch.Notice) != "" {
 		lines = append(lines, theme.noticeStyle(m.launch.Alert).Render(m.launch.Notice))
 	}
 	return theme.docStyle().Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+}
+
+func (m consoleShellModel) renderLaunchPlanLines(project domain.Project) []string {
+	theme := m.app.tuiTheme()
+	profile := m.app.quickScanProfile(project)
+	doctor := m.app.runtimeDoctor(profile, false, false)
+	modules := summarizeLaunchModules(profile.Modules, 5)
+	if modules == "" {
+		modules = "-"
+	}
+	return []string{
+		"",
+		theme.eyebrowStyle().Render(m.app.catalog.T("console_launch_plan_title")),
+		theme.subtitleStyle().Render(fmt.Sprintf("%s: %s • %s: %s", m.app.catalog.T("scan_mode"), m.app.modeLabel(profile.Mode), m.app.catalog.T("coverage_profile"), m.app.coverageLabel(profile.Coverage))),
+		theme.subtitleStyle().Render(fmt.Sprintf("%s: %d • %s", m.app.catalog.T("scan_modules"), len(profile.Modules), modules)),
+		theme.subtitleStyle().Render(fmt.Sprintf("%s: %s", m.app.catalog.T("app_label_health"), doctorSummaryLine(m.app, doctor))),
+		theme.subtitleStyle().Render(fmt.Sprintf("%s: %s", m.app.catalog.T("console_launch_coverage_expectation"), m.app.coverageLabel(profile.Coverage))),
+		theme.eyebrowStyle().Render(m.app.catalog.T("console_launch_mode_impact_title")),
+		theme.subtitleStyle().Render(m.app.catalog.T("console_launch_best_effort_impact")),
+		theme.subtitleStyle().Render(m.app.catalog.T("console_launch_strict_impact")),
+		"",
+	}
+}
+
+func summarizeLaunchModules(modules []string, limit int) string {
+	if len(modules) == 0 {
+		return ""
+	}
+	if limit <= 0 || len(modules) <= limit {
+		return strings.Join(modules, ", ")
+	}
+	return fmt.Sprintf("%s +%d", strings.Join(modules[:limit], ", "), len(modules)-limit)
 }
 
 func (m consoleShellModel) renderMissionSurface(mission scanMissionModel) string {

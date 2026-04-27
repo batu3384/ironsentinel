@@ -3253,20 +3253,11 @@ func (a *App) handlePostScanFollowUp(run domain.ScanRun, findings []domain.Findi
 }
 
 func (a *App) nextReviewFinding(findings []domain.Finding) (domain.Finding, bool) {
-	if len(findings) == 0 {
+	prioritized := a.prioritizedFindings(findings, 1)
+	if len(prioritized) == 0 {
 		return domain.Finding{}, false
 	}
-	best := findings[0]
-	for _, finding := range findings[1:] {
-		if domain.SeverityRank(finding.Severity) < domain.SeverityRank(best.Severity) {
-			best = finding
-			continue
-		}
-		if domain.SeverityRank(finding.Severity) == domain.SeverityRank(best.Severity) && strings.Compare(finding.Title, best.Title) < 0 {
-			best = finding
-		}
-	}
-	return best, true
+	return prioritized[0], true
 }
 
 func (a *App) watchRuns(ctx context.Context, runID string, interval time.Duration) error {

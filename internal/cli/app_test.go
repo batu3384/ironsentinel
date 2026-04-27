@@ -1765,6 +1765,22 @@ func TestNextReviewFindingPicksHighestSeverity(t *testing.T) {
 	}
 }
 
+func TestNextReviewFindingUsesPriorityWhenAvailable(t *testing.T) {
+	app := &App{}
+	findings := []domain.Finding{
+		{Fingerprint: "critical-low-priority", Severity: domain.SeverityCritical, Title: "EICAR test signature detected", Priority: 3.8},
+		{Fingerprint: "high-top-priority", Severity: domain.SeverityHigh, Title: "Potential GitHub personal access token", Priority: 9.7},
+	}
+
+	finding, ok := app.nextReviewFinding(findings)
+	if !ok {
+		t.Fatalf("expected next review finding")
+	}
+	if finding.Fingerprint != "high-top-priority" {
+		t.Fatalf("expected priority resolver to select high-top-priority, got %s", finding.Fingerprint)
+	}
+}
+
 func TestScanDebriefActionLinesReflectOutcome(t *testing.T) {
 	app := &App{
 		lang:    i18n.EN,

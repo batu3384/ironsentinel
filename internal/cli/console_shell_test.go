@@ -38,6 +38,16 @@ func TestConsoleShellLaunchViewShowsPrimaryActionAndSelectedTarget(t *testing.T)
 		app.catalog.T("console_launch_readiness_ready"),
 		app.catalog.T("console_launch_primary_action"),
 		project.DisplayName,
+		app.catalog.T("console_launch_plan_title"),
+		app.catalog.T("scan_mode"),
+		app.modeLabel(domain.ModeSafe),
+		app.catalog.T("coverage_profile"),
+		app.coverageLabel(domain.CoveragePremium),
+		app.catalog.T("scan_modules"),
+		"stack-detector",
+		app.catalog.T("console_launch_mode_impact_title"),
+		app.catalog.T("console_launch_best_effort_impact"),
+		app.catalog.T("console_launch_strict_impact"),
 	} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("expected launch view to contain %q, got %q", fragment, view)
@@ -649,7 +659,7 @@ func TestConsoleShellAppendsDebriefBelowMissionWhenRunCompletes(t *testing.T) {
 		model.app.catalog.T("module_failed_count"),
 		strings.ToUpper(string(domain.ScanCompleted)),
 		model.mission.project.DisplayName,
-		model.app.catalog.T("scan_spotlight_title"),
+		model.app.catalog.T("scan_report_first_step_title"),
 		"GITLEAKS",
 	}
 	for _, fragment := range fragments {
@@ -675,7 +685,6 @@ func TestConsoleShellDebriefReportLocalizesTurkishAndShowsDetailedSections(t *te
 		model.app.catalog.T("scan_report_fix_plan_title"),
 		model.app.catalog.T("scan_report_blockers_title"),
 		model.app.catalog.T("scan_phase_verdicts_title"),
-		model.app.catalog.T("scan_spotlight_title"),
 		model.app.catalog.T("scan_report_first_step_title"),
 		"TAMAMLANDI",
 	} {
@@ -747,6 +756,47 @@ func TestConsoleShellDrawerHintUsesCatalogCopy(t *testing.T) {
 			t.Fatalf("expected turkish drawer hint %q from catalog, got %q", want, got)
 		}
 	})
+}
+
+func TestConsoleShellRunningMissionOpensReadOnlyDrawers(t *testing.T) {
+	app, project := newTestTUIApp(t)
+	model := newConsoleShellModel(app, consoleShellLaunchState{
+		SelectedProjectID: project.ID,
+	}, context.Background())
+	profile := app.quickScanProfile(project)
+	model.stage = consoleStageMission
+	model.width = 150
+	model.height = 42
+	model.mission = consoleShellMissionState{
+		project:    project,
+		profile:    profile,
+		doctor:     app.runtimeDoctor(profile, false, false),
+		launchedAt: time.Unix(1_763_000_000, 0).UTC(),
+		running:    true,
+		console:    model.seededMissionConsole(project, profile),
+		run:        model.seededMissionRun(profile),
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	runtimeDrawer := updated.(consoleShellModel)
+	if runtimeDrawer.drawer != consoleDrawerRuntime {
+		t.Fatalf("expected runtime drawer to open during running mission, got %v", runtimeDrawer.drawer)
+	}
+	if !strings.Contains(runtimeDrawer.View(), app.catalog.T("runtime_command_title")) {
+		t.Fatalf("expected running mission to render read-only runtime drawer\n%s", runtimeDrawer.View())
+	}
+
+	updated, _ = runtimeDrawer.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	findingsDrawer := updated.(consoleShellModel)
+	if findingsDrawer.drawer != consoleDrawerFindings {
+		t.Fatalf("expected findings drawer to replace runtime drawer during running mission, got %v", findingsDrawer.drawer)
+	}
+
+	updated, _ = findingsDrawer.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	runDrawer := updated.(consoleShellModel)
+	if runDrawer.drawer != consoleDrawerRun {
+		t.Fatalf("expected run drawer to open during running mission, got %v", runDrawer.drawer)
+	}
 }
 
 func TestConsoleShellDebriefLayoutFitsShortTerminalWithDrawerOpen(t *testing.T) {

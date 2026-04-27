@@ -27,7 +27,7 @@ func (m consoleShellModel) drawerTitle() string {
 }
 
 func (m consoleShellModel) renderDrawerPanel(width int) string {
-	if m.drawer == consoleDrawerNone || !m.mission.done {
+	if m.drawer == consoleDrawerNone || !m.hasMissionSurface() {
 		return ""
 	}
 

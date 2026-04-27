@@ -1656,7 +1656,8 @@ func (a *App) consoleDebriefFirstStep(run domain.ScanRun, findings []domain.Find
 	if requiredErr != nil {
 		return "P0: " + a.catalog.T("scan_debrief_action_doctor")
 	}
-	if finding, ok := a.nextReviewFinding(findings); ok {
+	if prioritized := a.prioritizedFindings(findings, 1); len(prioritized) > 0 {
+		finding := prioritized[0]
 		priority := "P1"
 		if finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret {
 			priority = "P0"
@@ -1760,7 +1761,6 @@ func (a *App) consoleDebriefReportLines(run domain.ScanRun, findings []domain.Fi
 	lines = append(lines,
 		fmt.Sprintf("- %s: %s", a.catalog.T("scan_phase_verdicts_title"), a.consoleDebriefModuleSummary(run)),
 		fmt.Sprintf("- %s: %s", a.catalog.T("scan_mc_handoff_title"), a.consoleDebriefActionSummary(run, findings, requiredErr)),
-		a.catalog.T("scan_spotlight_title")+":",
 		a.catalog.T("scan_report_fix_plan_title")+":",
 		fmt.Sprintf("- %s: %s", a.catalog.T("scan_report_first_step_title"), a.consoleDebriefFirstStep(run, findings, requiredErr)),
 		fmt.Sprintf("- %s: ironsentinel scan . --strict", a.catalog.T("scan_report_validation_title")),

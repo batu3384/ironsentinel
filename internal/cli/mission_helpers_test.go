@@ -118,6 +118,67 @@ func TestConsoleDebriefReportLinesIncludeOperationalDecisionAndFixPlan(t *testin
 	}
 }
 
+func TestConsoleDebriefUsesSinglePriorityOrderAndNoDuplicateSpotlight(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	run := domain.ScanRun{
+		ID:        "run-priority",
+		ProjectID: "prj-priority",
+		Status:    domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings: 2,
+			CountsBySeverity: map[domain.Severity]int{
+				domain.SeverityCritical: 1,
+				domain.SeverityHigh:     1,
+			},
+		},
+		ModuleResults: []domain.ModuleResult{
+			{Name: "secret-heuristics", Status: domain.ModuleCompleted},
+			{Name: "malware-signature", Status: domain.ModuleCompleted},
+		},
+	}
+	findings := []domain.Finding{
+		{
+			Fingerprint: "fp-eicar",
+			Severity:    domain.SeverityCritical,
+			Category:    domain.CategoryMalware,
+			Module:      "malware-signature",
+			Title:       "EICAR test signature detected",
+			Remediation: "Confirm it is an intentional fixture or quarantine it.",
+			Priority:    3.8,
+		},
+		{
+			Fingerprint: "fp-token",
+			Severity:    domain.SeverityHigh,
+			Category:    domain.CategorySecret,
+			Module:      "secret-heuristics",
+			Title:       "Potential GitHub personal access token",
+			Remediation: "Rotate the token immediately.",
+			Priority:    9.7,
+		},
+	}
+
+	output := strings.Join(app.consoleDebriefReportLines(run, findings, nil), "\n")
+	if strings.Count(output, app.catalog.T("scan_spotlight_title")+":") != 1 {
+		t.Fatalf("expected one spotlight section without empty duplicates\n%s", output)
+	}
+	firstStep := "- " + app.catalog.T("scan_report_first_step_title") + ":"
+	firstStepIndex := strings.Index(output, firstStep)
+	if firstStepIndex < 0 {
+		t.Fatalf("expected first-step line\n%s", output)
+	}
+	tokenIndex := strings.Index(output[firstStepIndex:], "Potential GitHub personal access token")
+	eicarIndex := strings.Index(output[firstStepIndex:], "EICAR test signature detected")
+	if tokenIndex < 0 {
+		t.Fatalf("expected top-priority token finding to drive first step\n%s", output)
+	}
+	if eicarIndex >= 0 && eicarIndex < tokenIndex {
+		t.Fatalf("first step should follow the same priority order as the remediation plan\n%s", output)
+	}
+	if !strings.Contains(output, "--finding fp-token") {
+		t.Fatalf("expected campaign command to use the same top-priority finding\n%s", output)
+	}
+}
+
 func TestTurkishBadgesUseLocaleAwareUppercase(t *testing.T) {
 	app, _ := newTestTUIApp(t)
 	app.lang = i18n.TR
@@ -137,5 +198,19 @@ func TestTurkishBadgesUseLocaleAwareUppercase(t *testing.T) {
 		if strings.Contains(output, bad) {
 			t.Fatalf("expected Turkish badge output not to contain ASCII-only %q, got %q", bad, output)
 		}
+	}
+}
+
+func TestMissionProgressSummaryIncludesConfidence(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+
+	estimated := app.missionProgressSummary(1, 3)
+	if !strings.Contains(estimated, "estimated") {
+		t.Fatalf("expected in-flight progress to disclose estimated confidence, got %q", estimated)
+	}
+
+	exact := app.missionProgressSummary(3, 3)
+	if !strings.Contains(exact, "exact") {
+		t.Fatalf("expected completed progress to disclose exact confidence, got %q", exact)
 	}
 }

@@ -52,17 +52,17 @@ func (m consoleShellModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.launch.Alert = false
 			return m, nil
 		case "f":
-			if m.hasMissionSurface() && m.mission.done {
+			if m.hasMissionSurface() {
 				m.drawer = consoleDrawerFindings
 			}
 			return m, nil
 		case "r":
-			if m.hasMissionSurface() && m.mission.done {
+			if m.hasMissionSurface() {
 				m.drawer = consoleDrawerRuntime
 			}
 			return m, nil
 		case "d":
-			if m.hasMissionSurface() && m.mission.done {
+			if m.hasMissionSurface() {
 				m.drawer = consoleDrawerRun
 			}
 			return m, nil

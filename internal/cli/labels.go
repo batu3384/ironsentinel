@@ -876,7 +876,12 @@ func (a *App) missionProgressPercent(done, total int) int {
 }
 
 func (a *App) missionProgressSummary(done, total int) string {
-	return fmt.Sprintf("%d%% • %d/%d", a.missionProgressPercent(done, total), done, max(1, total))
+	total = max(1, total)
+	confidence := a.catalog.T("scan_progress_estimated")
+	if done >= total {
+		confidence = a.catalog.T("scan_progress_exact")
+	}
+	return fmt.Sprintf("%d%% %s • %d/%d", a.missionProgressPercent(done, total), confidence, done, total)
 }
 
 func (a *App) liveRiskLabel(critical, high, medium, low int) string {
