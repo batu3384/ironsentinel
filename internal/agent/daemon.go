@@ -88,12 +88,13 @@ func startDaemonHeartbeatWithMeta(cfg config.Config, mode string, meta domain.Ru
 			case <-ctx.Done():
 				return
 			case tick := <-ticker.C:
-				mu.Lock()
+				// Read daemon status from disk BEFORE acquiring lock to minimize critical section
 				current := discoverDaemon(cfg)
+				heartbeat := tick.UTC()
+				mu.Lock()
 				if current.PID == status.PID && current.StartedAt != nil {
 					status = current
 				}
-				heartbeat := tick.UTC()
 				status.Active = true
 				status.Stale = false
 				status.LastHeartbeat = &heartbeat

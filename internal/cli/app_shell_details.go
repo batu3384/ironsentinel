@@ -81,6 +81,21 @@ func (m appShellModel) currentFindingsStatusFilterLabel() string {
 	return m.app.findingStatusLabel(domain.FindingStatus(filter))
 }
 
+func (m appShellModel) currentFindingsCategoryFilter() string {
+	if m.findingsCategoryIdx < 0 || m.findingsCategoryIdx >= len(runFindingCategoryFilters) {
+		return "all"
+	}
+	return runFindingCategoryFilters[m.findingsCategoryIdx]
+}
+
+func (m appShellModel) currentFindingsCategoryFilterLabel() string {
+	filter := m.currentFindingsCategoryFilter()
+	if filter == "all" {
+		return m.app.catalog.T("artifact_filter_all")
+	}
+	return m.app.categoryLabel(domain.FindingCategory(filter))
+}
+
 func (m appShellModel) renderRunQueueSummary() string {
 	counts := m.app.countRunStatuses(m.snapshot.Portfolio.Runs)
 	return fmt.Sprintf("%s: %d • %s: %d • %s: %d",
@@ -103,7 +118,8 @@ func (m appShellModel) renderFindingPressureSummary(findings []domain.Finding) s
 func (m appShellModel) filterFindings(findings []domain.Finding) []domain.Finding {
 	severityFilter := m.currentFindingsSeverityFilter()
 	statusFilter := m.currentFindingsStatusFilter()
-	if severityFilter == "all" && statusFilter == "all" {
+	categoryFilter := m.currentFindingsCategoryFilter()
+	if severityFilter == "all" && statusFilter == "all" && categoryFilter == "all" {
 		return findings
 	}
 	filtered := make([]domain.Finding, 0, len(findings))
@@ -112,6 +128,9 @@ func (m appShellModel) filterFindings(findings []domain.Finding) []domain.Findin
 			continue
 		}
 		if statusFilter != "all" && m.normalizedFindingStatus(finding.Status) != domain.FindingStatus(statusFilter) {
+			continue
+		}
+		if categoryFilter != "all" && string(finding.Category) != categoryFilter {
 			continue
 		}
 		filtered = append(filtered, finding)

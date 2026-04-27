@@ -594,6 +594,7 @@ func (m appShellModel) commandHints() []commandHint {
 		base = append(base,
 			commandHint{Key: "f", Label: m.app.catalog.T("finding_filter_severity_label")},
 			commandHint{Key: "g", Label: m.app.catalog.T("finding_filter_status_label")},
+			commandHint{Key: "c", Label: m.app.catalog.T("finding_filter_category_label")},
 			commandHint{Key: "0", Label: m.app.catalog.T("app_help_filter_reset")},
 		)
 	}

@@ -79,6 +79,7 @@ type App struct {
 	cwd                   string
 	lang                  i18n.Language
 	uiMode                uiMode
+	colorTheme            colorTheme
 	catalog               i18n.Catalog
 	preferences           preferences.Preferences
 	languageConfigured    bool
@@ -151,12 +152,17 @@ func New(cfg config.Config) (*App, error) {
 	if err != nil {
 		mode = uiModeStandard
 	}
+	colorTheme, err := parseColorTheme(prefs.ColorTheme)
+	if err != nil {
+		colorTheme = colorThemeDark
+	}
 	app := &App{
 		cfg:                cfg,
 		service:            service,
 		cwd:                cwd,
 		lang:               lang,
 		uiMode:             mode,
+		colorTheme:         colorTheme,
 		catalog:            i18n.New(lang),
 		preferences:        prefs,
 		languageConfigured: prefs.LanguageConfigured,
@@ -221,7 +227,7 @@ func (a *App) SaveLanguage(language string) error {
 	return preferences.Save(a.cfg, a.preferences)
 }
 
-func previewPersistentFlagValues(args []string) (lang, mode string) {
+func previewPersistentFlagValues(args []string) (lang, mode, colorTheme string) {
 	for i := 0; i < len(args); i++ {
 		arg := strings.TrimSpace(args[i])
 		switch {
@@ -235,9 +241,14 @@ func previewPersistentFlagValues(args []string) (lang, mode string) {
 		case arg == "--ui-mode" && i+1 < len(args):
 			i++
 			mode = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "--color-theme="):
+			colorTheme = strings.TrimSpace(strings.TrimPrefix(arg, "--color-theme="))
+		case arg == "--color-theme" && i+1 < len(args):
+			i++
+			colorTheme = strings.TrimSpace(args[i])
 		}
 	}
-	return lang, mode
+	return lang, mode, colorTheme
 }
 
 func (a *App) localizedUsageTemplate() string {

@@ -15,12 +15,16 @@ import (
 func (a *App) RootCommand() *cobra.Command {
 	var langFlag string
 	var uiModeFlag string
-	if previewLang, previewMode := previewPersistentFlagValues(os.Args[1:]); previewLang != "" || previewMode != "" {
+	var colorThemeFlag string
+	if previewLang, previewMode, previewTheme := previewPersistentFlagValues(os.Args[1:]); previewLang != "" || previewMode != "" || previewTheme != "" {
 		if previewLang != "" {
 			_ = a.SetLanguage(previewLang)
 		}
 		if previewMode != "" {
 			_ = a.SetUIMode(previewMode)
+		}
+		if previewTheme != "" {
+			_ = a.SetColorTheme(previewTheme)
 		}
 	}
 
@@ -44,6 +48,11 @@ func (a *App) RootCommand() *cobra.Command {
 				return err
 			}
 		}
+		if colorThemeFlag != "" {
+			if err := a.SetColorTheme(colorThemeFlag); err != nil {
+				return err
+			}
+		}
 		if err := a.ensureInitialLanguageSelection(root, langFlag); err != nil {
 			return err
 		}
@@ -55,6 +64,7 @@ func (a *App) RootCommand() *cobra.Command {
 
 	root.PersistentFlags().StringVar(&langFlag, "lang", "", a.catalog.T("lang_flag"))
 	root.PersistentFlags().StringVar(&uiModeFlag, "ui-mode", "", a.catalog.T("ui_mode_flag"))
+	root.PersistentFlags().StringVar(&colorThemeFlag, "color-theme", "", a.catalog.T("color_theme_flag"))
 
 	root.AddCommand(a.overviewCommand())
 	root.AddCommand(a.tuiCommand())

@@ -1439,7 +1439,7 @@ func TestAppRuntimeDoctorCachesByProfile(t *testing.T) {
 }
 
 func TestPreviewPersistentFlagValuesParsesLangAndUIMode(t *testing.T) {
-	lang, mode := previewPersistentFlagValues([]string{"scan", "--lang", "tr", "--ui-mode=compact"})
+	lang, mode, _ := previewPersistentFlagValues([]string{"scan", "--lang", "tr", "--ui-mode=compact"})
 	if lang != "tr" || mode != "compact" {
 		t.Fatalf("previewPersistentFlagValues() = (%q, %q), want (tr, compact)", lang, mode)
 	}

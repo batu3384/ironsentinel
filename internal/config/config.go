@@ -181,7 +181,7 @@ func envIntFirst(fallback int, keys ...string) int {
 		if err == nil {
 			return parsed
 		}
-		return fallback
+		continue // Try next key if parse fails
 	}
 	return fallback
 }

@@ -104,6 +104,7 @@ type appShellModel struct {
 	detailScroll        int
 	findingsSeverityIdx int
 	findingsStatusIdx   int
+	findingsCategoryIdx int
 	selectedProjectID   string
 	findingsScopeRun    string
 	review              scanReviewState

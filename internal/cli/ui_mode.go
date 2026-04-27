@@ -17,6 +17,18 @@ const (
 	uiModeCompact  uiMode = "compact"
 )
 
+type colorTheme string
+
+const (
+	colorThemeDark  colorTheme = "dark"
+	colorThemeLight colorTheme = "light"
+)
+
+var selectableColorThemes = []colorTheme{
+	colorThemeDark,
+	colorThemeLight,
+}
+
 var selectableUIModes = []uiMode{
 	uiModeStandard,
 	uiModePlain,
@@ -33,6 +45,17 @@ func parseUIMode(value string) (uiMode, error) {
 		return uiModeCompact, nil
 	default:
 		return "", fmt.Errorf("invalid ui mode: %s", value)
+	}
+}
+
+func parseColorTheme(value string) (colorTheme, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(colorThemeDark):
+		return colorThemeDark, nil
+	case string(colorThemeLight):
+		return colorThemeLight, nil
+	default:
+		return "", fmt.Errorf("invalid color theme: %s", value)
 	}
 }
 
@@ -63,16 +86,44 @@ func (a *App) SaveUIMode(mode string) error {
 	return preferences.Save(a.cfg, a.preferences)
 }
 
-type tuiTheme struct {
-	mode uiMode
+func (a *App) SetColorTheme(theme string) error {
+	parsed, err := parseColorTheme(theme)
+	if err != nil {
+		return fmt.Errorf("%s", a.catalog.T("color_theme_invalid", theme))
+	}
+	a.colorTheme = parsed
+	return nil
 }
 
-func newTUITheme(mode uiMode) tuiTheme {
-	return tuiTheme{mode: mode}
+func (a *App) SaveColorTheme(theme string) error {
+	if err := a.SetColorTheme(theme); err != nil {
+		return err
+	}
+	a.preferences.ColorTheme = string(a.colorTheme)
+	return preferences.Save(a.cfg, a.preferences)
+}
+
+type tuiTheme struct {
+	mode         uiMode
+	colorTheme   colorTheme
+}
+
+func newTUITheme(mode uiMode, theme colorTheme) tuiTheme {
+	if theme == "" {
+		theme = colorThemeDark
+	}
+	return tuiTheme{mode: mode, colorTheme: theme}
 }
 
 func (a *App) tuiTheme() tuiTheme {
-	return newTUITheme(a.currentUIMode())
+	return newTUITheme(a.currentUIMode(), a.currentColorTheme())
+}
+
+func (a *App) currentColorTheme() colorTheme {
+	if a != nil && a.colorTheme != "" {
+		return a.colorTheme
+	}
+	return colorThemeDark
 }
 
 func (a *App) decorativeMotionEnabled() bool {
@@ -88,6 +139,68 @@ func (t tuiTheme) plain() bool {
 
 func (t tuiTheme) compact() bool {
 	return t.mode == uiModeCompact
+}
+
+func (t tuiTheme) dark() bool {
+	return t.colorTheme == colorThemeDark
+}
+
+// colorPalette defines the color scheme for a theme
+type colorPalette struct {
+	primary      string
+	secondary    string
+	accent       string
+	warning      string
+	error        string
+	success      string
+	muted        string
+	highlight    string
+	tabActiveBG  string
+	tabActiveFG  string
+	panelBorder  string
+	panelBG      string
+	heroBG       string
+}
+
+// Dark theme palette (default)
+var darkPalette = colorPalette{
+	primary:     "153", // Light blue
+	secondary:   "117", // Cyan
+	accent:      "81",  // Teal
+	warning:     "214", // Orange
+	error:       "203", // Red
+	success:     "86",  // Green
+	muted:       "243", // Gray
+	highlight:   "117", // Cyan
+	tabActiveBG: "31",  // Blue bg
+	tabActiveFG: "231", // White text
+	panelBorder: "62",  // Gray border
+	panelBG:     "235", // Dark gray bg
+	heroBG:      "233", // Darker bg
+}
+
+// Light theme palette
+var lightPalette = colorPalette{
+	primary:     "26",  // Dark blue
+	secondary:   "31",  // Blue
+	accent:      "36",  // Teal
+	warning:     "208", // Orange
+	error:       "196", // Red
+	success:     "34",  // Green
+	muted:       "247", // Gray
+	highlight:   "32",  // Green
+	tabActiveBG: "21",   // Dark blue bg
+	tabActiveFG: "231", // White text
+	panelBorder: "250", // Light gray border
+	panelBG:     "255", // White bg
+	heroBG:      "252", // Light gray bg
+}
+
+func (t tuiTheme) palette() colorPalette {
+	if t.dark() {
+		return darkPalette
+	}
+	return lightPalette
 }
 
 func (t tuiTheme) docStyle() lipgloss.Style {
@@ -107,7 +220,7 @@ func (t tuiTheme) docStyle() lipgloss.Style {
 func (t tuiTheme) titleStyle() lipgloss.Style {
 	style := lipgloss.NewStyle().Bold(true)
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("153"))
+		style = style.Foreground(lipgloss.Color(t.palette().primary))
 	}
 	return style
 }
@@ -115,7 +228,7 @@ func (t tuiTheme) titleStyle() lipgloss.Style {
 func (t tuiTheme) heroTitleStyle() lipgloss.Style {
 	style := lipgloss.NewStyle().Bold(true)
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("123"))
+		style = style.Foreground(lipgloss.Color(t.palette().accent))
 	}
 	return style
 }
@@ -123,7 +236,7 @@ func (t tuiTheme) heroTitleStyle() lipgloss.Style {
 func (t tuiTheme) subtitleStyle() lipgloss.Style {
 	style := lipgloss.NewStyle()
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("250"))
+		style = style.Foreground(lipgloss.Color(t.palette().muted))
 	}
 	return style
 }
@@ -167,7 +280,8 @@ func (t tuiTheme) panelStyle(width int) lipgloss.Style {
 	}
 	style = style.Border(border).Padding(paddingY, paddingX)
 	if !t.plain() {
-		style = style.BorderForeground(lipgloss.Color("62")).Background(lipgloss.Color("235"))
+		p := t.palette()
+		style = style.BorderForeground(lipgloss.Color(p.panelBorder)).Background(lipgloss.Color(p.panelBG))
 	}
 	return style
 }
@@ -192,13 +306,14 @@ func (t tuiTheme) heroPanelStyle(width int) lipgloss.Style {
 	if t.plain() {
 		return style.Border(lipgloss.RoundedBorder())
 	}
+	p := t.palette()
 	if t.compact() {
-		return style.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("67"))
+		return style.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(p.accent))
 	}
 	return style.
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("81")).
-		Background(lipgloss.Color("233"))
+		BorderForeground(lipgloss.Color(p.accent)).
+		Background(lipgloss.Color(p.heroBG))
 }
 
 func (t tuiTheme) gap() string {
@@ -218,7 +333,7 @@ func (t tuiTheme) blockGap() string {
 func (t tuiTheme) sectionTitleStyle() lipgloss.Style {
 	style := lipgloss.NewStyle().Bold(true)
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("117"))
+		style = style.Foreground(lipgloss.Color(t.palette().secondary))
 	}
 	return style
 }
@@ -226,7 +341,7 @@ func (t tuiTheme) sectionTitleStyle() lipgloss.Style {
 func (t tuiTheme) sectionBodyStyle() lipgloss.Style {
 	style := lipgloss.NewStyle()
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("252"))
+		style = style.Foreground(lipgloss.Color(t.palette().muted))
 	}
 	return style
 }
@@ -234,7 +349,7 @@ func (t tuiTheme) sectionBodyStyle() lipgloss.Style {
 func (t tuiTheme) eyebrowStyle() lipgloss.Style {
 	style := lipgloss.NewStyle().Bold(true)
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("75"))
+		style = style.Foreground(lipgloss.Color(t.palette().success))
 	}
 	return style
 }
@@ -282,7 +397,7 @@ func (t tuiTheme) rowHintStyle(selected bool) lipgloss.Style {
 func (t tuiTheme) mutedStyle() lipgloss.Style {
 	style := lipgloss.NewStyle()
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("243"))
+		style = style.Foreground(lipgloss.Color(t.palette().muted))
 	}
 	return style
 }
@@ -296,10 +411,11 @@ func (t tuiTheme) routeRibbonStyle(width int) lipgloss.Style {
 	if t.plain() {
 		return style
 	}
+	p := t.palette()
 	return style.
-		Background(lipgloss.Color("233")).
+		Background(lipgloss.Color(p.heroBG)).
 		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(lipgloss.Color("238"))
+		BorderForeground(lipgloss.Color(p.panelBorder))
 }
 
 func (t tuiTheme) commandRibbonStyle(width int) lipgloss.Style {
@@ -307,10 +423,11 @@ func (t tuiTheme) commandRibbonStyle(width int) lipgloss.Style {
 	if t.plain() {
 		return style
 	}
+	p := t.palette()
 	return style.
-		Background(lipgloss.Color("232")).
+		Background(lipgloss.Color(p.heroBG)).
 		Border(lipgloss.NormalBorder(), true, false, false, false).
-		BorderForeground(lipgloss.Color("236"))
+		BorderForeground(lipgloss.Color(p.panelBorder))
 }
 
 func (t tuiTheme) noticeStyle(alert bool) lipgloss.Style {
@@ -318,12 +435,12 @@ func (t tuiTheme) noticeStyle(alert bool) lipgloss.Style {
 	if alert {
 		style = style.Bold(true)
 		if !t.plain() {
-			style = style.Foreground(lipgloss.Color("203"))
+			style = style.Foreground(lipgloss.Color(t.palette().error))
 		}
 		return style
 	}
 	if !t.plain() {
-		style = style.Foreground(lipgloss.Color("86"))
+		style = style.Foreground(lipgloss.Color(t.palette().success))
 	}
 	return style
 }

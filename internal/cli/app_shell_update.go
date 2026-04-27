@@ -313,6 +313,15 @@ func (m appShellModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refreshReviewContext()
 			return m, nil
 		}
+		if m.route == appRouteFindings {
+			m.findingsCategoryIdx = (m.findingsCategoryIdx + 1) % len(runFindingCategoryFilters)
+			m.cursor = 0
+			m.detailScroll = 0
+			m.clampCursor()
+			m.notice = m.app.catalog.T("finding_filter_notice", m.currentFindingsSeverityFilterLabel(), m.currentFindingsStatusFilterLabel())
+			m.alert = false
+			return m, nil
+		}
 	case "i":
 		if m.route == appRouteScanReview {
 			m.review.Isolation = nextIsolationMode(m.review.Isolation)
@@ -338,6 +347,7 @@ func (m appShellModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.route == appRouteFindings {
 			m.findingsSeverityIdx = 0
 			m.findingsStatusIdx = 0
+			m.findingsCategoryIdx = 0
 			m.cursor = 0
 			m.detailScroll = 0
 			m.clampCursor()

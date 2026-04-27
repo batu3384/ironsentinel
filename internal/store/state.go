@@ -77,18 +77,7 @@ func (s *StateStore) bootstrap() error {
 	if err := s.exec(`PRAGMA synchronous = NORMAL;`); err != nil {
 		return err
 	}
-	if err := s.applyMigrations(); err != nil {
-		return err
-	}
-
-	empty, err := s.isEmpty()
-	if err != nil {
-		return err
-	}
-	if !empty {
-		return nil
-	}
-	return nil
+	return s.applyMigrations()
 }
 
 func (s *StateStore) pragmaString(name string) (string, error) {

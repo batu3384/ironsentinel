@@ -15,6 +15,7 @@ type tuiMetricCard struct {
 
 var runFindingSeverityFilters = []string{"all", "critical", "high", "medium", "low", "info"}
 var runFindingStatusFilters = []string{"all", "open", "investigating", "accepted_risk", "false_positive", "fixed"}
+var runFindingCategoryFilters = []string{"all", "secret", "vulnerability", "compliance", "configuration", "license"}
 
 func (a *App) buildTUISnapshot() tuiSnapshot {
 	return tuiSnapshot{

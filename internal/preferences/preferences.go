@@ -11,6 +11,7 @@ import (
 type Preferences struct {
 	Language           string `json:"language"`
 	UIMode             string `json:"ui_mode"`
+	ColorTheme         string `json:"color_theme"`
 	LanguageConfigured bool   `json:"-"`
 }
 
@@ -20,7 +21,8 @@ func Load(cfg config.Config) (Preferences, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Preferences{
-				UIMode: "standard",
+				UIMode:     "standard",
+				ColorTheme: "dark",
 			}, nil
 		}
 		return Preferences{}, err
@@ -35,6 +37,9 @@ func Load(cfg config.Config) (Preferences, error) {
 	}
 	if preferences.UIMode == "" {
 		preferences.UIMode = "standard"
+	}
+	if preferences.ColorTheme == "" {
+		preferences.ColorTheme = "dark"
 	}
 	return preferences, nil
 }
