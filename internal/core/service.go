@@ -13,6 +13,7 @@ import (
 	"github.com/batu3384/ironsentinel/internal/agent"
 	"github.com/batu3384/ironsentinel/internal/config"
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/i18n"
 	"github.com/batu3384/ironsentinel/internal/policy"
 	"github.com/batu3384/ironsentinel/internal/reports"
 	"github.com/batu3384/ironsentinel/internal/sbom"
@@ -339,11 +340,15 @@ func (s *Service) Export(runID, format, baselineRunID string) (string, error) {
 }
 
 func (s *Service) ExportWithVEX(runID, format, baselineRunID, vexPath string) (string, error) {
+	return s.ExportWithVEXAndLanguage(runID, format, baselineRunID, vexPath, i18n.EN)
+}
+
+func (s *Service) ExportWithVEXAndLanguage(runID, format, baselineRunID, vexPath string, language i18n.Language) (string, error) {
 	report, err := s.BuildRunReportWithVEX(runID, baselineRunID, vexPath)
 	if err != nil {
 		return "", err
 	}
-	return reports.Export(format, report)
+	return reports.ExportLocalized(format, report, language)
 }
 
 func (s *Service) BuildRunReport(runID, baselineRunID string) (domain.RunReport, error) {

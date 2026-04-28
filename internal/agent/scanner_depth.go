@@ -85,7 +85,7 @@ func buildZAPAutomationCommand(cfg config.Config, binary string, execution modul
 	if err := os.MkdirAll(zapHomeHostPath, 0o755); err != nil {
 		return nil, "", err
 	}
-	command := exec.Command(binary, "-dir", zapHomeExecPath, "-cmd", "-autorun", planExecPath)
+	command := zapAutomationCommand(binary, planExecPath, zapHomeExecPath)
 	command.Dir = execution.request.TargetPath
 	if authProfile != nil {
 		zapEnv, err := buildZAPAuthEnv(resolvedTarget, *authProfile)
@@ -95,6 +95,11 @@ func buildZAPAutomationCommand(cfg config.Config, binary string, execution modul
 		command.Env = append(os.Environ(), zapEnv...)
 	}
 	return command, reportExecPath, nil
+}
+
+func zapAutomationCommand(binary, planPath, zapHomePath string) *exec.Cmd {
+	const script = `plan="$1"; binary="$2"; zap_home="$3"; trap 'rm -f "$plan"' EXIT; "$binary" -dir "$zap_home" -cmd -autorun "$plan"`
+	return exec.Command("sh", "-c", script, "ironsentinel-zap", planPath, binary, zapHomePath)
 }
 
 func parseSARIFCategory(category domain.FindingCategory, scanner string) outputParser {

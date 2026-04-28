@@ -33,6 +33,22 @@ func TestFindingPriorityAndExposureSummariesHighlightSCASignals(t *testing.T) {
 	}
 }
 
+func TestFindingPriorityLabelUsesRiskScoreInsteadOfRemediationPriority(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	finding := domain.Finding{
+		Severity: domain.SeverityHigh,
+		Priority: 5.5,
+	}
+
+	label := app.findingPriorityLabel(finding)
+	if strings.Contains(label, "P5.5") {
+		t.Fatalf("risk score should not look like remediation priority, got %q", label)
+	}
+	if !strings.Contains(label, "Risk 5.5") {
+		t.Fatalf("expected risk-score copy, got %q", label)
+	}
+}
+
 func TestFindingSignalSummaryIncludesVEXState(t *testing.T) {
 	app, _ := newTestTUIApp(t)
 	finding := domain.Finding{
@@ -52,6 +68,53 @@ func TestFindingSignalSummaryIncludesVEXState(t *testing.T) {
 	}
 	if !strings.Contains(signal, "vulnerable code not present") {
 		t.Fatalf("expected VEX justification signal, got %q", signal)
+	}
+}
+
+func TestTurkishDebriefLocalizesKnownFindingTitleAndRemediation(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+	run := domain.ScanRun{
+		ID:        "run-localized",
+		ProjectID: "prj-localized",
+		Status:    domain.ScanCompleted,
+		Summary: domain.ScanSummary{
+			TotalFindings: 1,
+			CountsBySeverity: map[domain.Severity]int{
+				domain.SeverityCritical: 1,
+			},
+		},
+		ModuleResults: []domain.ModuleResult{{Name: "secret-heuristics", Status: domain.ModuleCompleted}},
+	}
+	findings := []domain.Finding{{
+		Fingerprint: "fp-token",
+		Severity:    domain.SeverityCritical,
+		Category:    domain.CategorySecret,
+		Module:      "secret-heuristics",
+		RuleID:      "secret.github_pat",
+		Title:       "Potential GitHub personal access token",
+		Remediation: "Revoke the token immediately and replace local storage with a secret reference.",
+		Priority:    9.7,
+	}}
+
+	output := strings.Join(app.consoleDebriefReportLines(run, findings, nil), "\n")
+	for _, forbidden := range []string{
+		"Potential GitHub personal access token",
+		"Revoke the token immediately",
+		"High-priority remediation",
+	} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("expected Turkish debrief not to leak raw scanner copy %q\n%s", forbidden, output)
+		}
+	}
+	for _, want := range []string{
+		"GitHub kişisel erişim belirteci olasılığı",
+		"Belirteci hemen iptal edin",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected Turkish debrief to contain %q\n%s", want, output)
+		}
 	}
 }
 

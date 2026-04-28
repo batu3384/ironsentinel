@@ -127,6 +127,9 @@ func TestBuildZAPAutomationCommandWritesPlan(t *testing.T) {
 	if !strings.Contains(args, "-autorun") {
 		t.Fatalf("expected autorun args, got %s", args)
 	}
+	if !strings.Contains(args, "rm -f") || !strings.Contains(args, "zap-automation.yaml") {
+		t.Fatalf("expected zap command to clean the sensitive automation plan after execution, got %s", args)
+	}
 	if !strings.Contains(args, filepath.Join(output, ".runtime", "home", ".ZAP")) {
 		t.Fatalf("expected zap args to include writable home dir, got %s", args)
 	}

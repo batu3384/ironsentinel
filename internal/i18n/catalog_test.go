@@ -57,8 +57,30 @@ func TestTurkishCatalogRejectsCriticalASCIITurkish(t *testing.T) {
 		"tui_finding_action_suppress",
 		"runtime_daemon_title",
 		"picker_notice",
+		"review_action_keep",
+		"review_action_suppress",
+		"findings_scope_all",
+		"no_matching_findings",
+		"brand_mascot_scout_hint",
+		"brand_mascot_warden_hint",
+		"preset_note_soc2",
+		"preset_note_sans_top25",
+		"gate_prompt",
+		"triage_select_prompt",
+		"export_format_prompt",
+		"findings_severity_flag",
+		"review_run_flag",
+		"suppress_days_flag",
+		"dast_auth_template_title",
+		"modules_prompt",
+		"suppress_select_prompt",
+		"finding_select_prompt",
+		"select_search_placeholder",
+		"daemon_schedule_drift_flag",
+		"finding_filter_severity_label",
+		"finding_filter_notice",
 	}
-	forbidden := []string{" odakli", " acar", " degistir", " siddet", " bolunmus", " gorunum", " doner", " kosu", " kuyruga", " bastirma", " sagligi", " klasor", " secici", " aciliyor"}
+	forbidden := []string{" odakli", " acar", " degistir", " siddet", " bolunmus", " gorunum", " doner", " kosu", " kuyruga", " bastirma", " sagligi", " klasor", " secici", " aciliyor", " secin", " birak", " bastir", "Tum ", "Istenen", " eslesen", "baslat", "gozden", "guvenlik", "Zayiflik", "Siddet", " kaydi", "Disa", "formati", "Kosu", "kimlig", "gore", "Gun", "suresi", "kullanilabilir", "sablon", "Calistirilacak", "modulleri", "icin yazin"}
 	for _, key := range keys {
 		value := tr[key]
 		for _, token := range forbidden {

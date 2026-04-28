@@ -221,6 +221,76 @@ func TestShellSafeLiveTrackerUsesPlainProgressWithoutCarriageReturns(t *testing.
 	}
 }
 
+func TestRuntimeDoctorPlainModeUsesLogSafeOutputWithoutMascotHero(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.uiMode = uiModePlain
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	output := captureCLIStdout(t, func() error {
+		app.renderRuntimeDoctor(domain.RuntimeDoctor{
+			Mode:             domain.ModeSafe,
+			StrictVersions:   true,
+			RequireIntegrity: true,
+			Ready:            false,
+			Required: []domain.RuntimeTool{
+				{Name: "checkov", ExpectedVersion: "3.2.0"},
+				{Name: "syft", ExpectedVersion: "1.42.0", ActualVersion: "1.40.0", Available: true},
+			},
+			Missing: []domain.RuntimeTool{
+				{Name: "checkov", ExpectedVersion: "3.2.0"},
+			},
+			Outdated: []domain.RuntimeTool{
+				{Name: "syft", ExpectedVersion: "1.42.0", ActualVersion: "1.40.0", Available: true},
+			},
+			Checks: []domain.RuntimeDoctorCheck{
+				{Name: "state-store", Status: "pass", Summary: "state store writable"},
+			},
+		})
+		return nil
+	})
+
+	for _, forbidden := range []string{"SCOUT", "WARDEN", "IRONSENTINEL", "[cyan]", "╭"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("expected plain runtime doctor to avoid mascot/hero/styled chrome %q\n%s", forbidden, output)
+		}
+	}
+	for _, want := range []string{app.catalog.T("runtime_doctor_title"), "Mod", "Eksik", "checkov", "syft", app.catalog.T("overview_next_steps")} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected plain runtime doctor to contain %q\n%s", want, output)
+		}
+	}
+	for _, tool := range []string{"checkov", "syft"} {
+		if count := strings.Count(output, "- "+tool+" |"); count != 1 {
+			t.Fatalf("expected %s to be listed once, got %d\n%s", tool, count, output)
+		}
+	}
+}
+
+func TestRenderStreamEventLocalizesFindingTitle(t *testing.T) {
+	app, _ := newTestTUIApp(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+
+	output := captureCLIStdout(t, func() error {
+		app.renderStreamEvent(domain.StreamEvent{
+			Type: "finding.created",
+			Finding: &domain.Finding{
+				RuleID: "secret.github_pat",
+				Title:  "Potential GitHub personal access token",
+			},
+		})
+		return nil
+	})
+
+	if strings.Contains(output, "Potential GitHub personal access token") {
+		t.Fatalf("expected stream event not to leak raw scanner title\n%s", output)
+	}
+	if !strings.Contains(output, "GitHub kişisel erişim belirteci olasılığı") {
+		t.Fatalf("expected stream event to localize finding title\n%s", output)
+	}
+}
+
 func TestPlainRunSummaryIncludesSeverityBreakdownAndModuleOutcomeSummary(t *testing.T) {
 	app, project := newTestTUIApp(t)
 	app.lang = i18n.TR

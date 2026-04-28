@@ -39,9 +39,11 @@ trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/repo"
 rsync -a \
   --exclude '.git' \
-  --exclude 'runtime' \
-  --exclude 'dist' \
-  --exclude 'coverage' \
-  --exclude '.DS_Store' \
-  "$ROOT_DIR"/ "$tmp_dir/repo/"
-go run ./cmd/ironsentinel --lang en scan "$tmp_dir/repo" --coverage core
+	  --exclude 'runtime' \
+	  --exclude 'dist' \
+	  --exclude 'coverage' \
+	  --exclude 'internal/core/testdata' \
+	  --exclude 'internal/cli/testdata' \
+	  --exclude '.DS_Store' \
+	  "$ROOT_DIR"/ "$tmp_dir/repo/"
+go run ./cmd/ironsentinel --lang en scan "$tmp_dir/repo" --coverage core --fail-on-new high

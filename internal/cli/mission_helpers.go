@@ -353,7 +353,7 @@ func suppressionExpiringCount(items []domain.Suppression, within time.Duration) 
 }
 
 func (a *App) findingPriorityLabel(finding domain.Finding) string {
-	parts := []string{fmt.Sprintf("P%.1f", finding.Priority)}
+	parts := []string{fmt.Sprintf("Risk %.1f", finding.Priority)}
 	if finding.KEV {
 		parts = append(parts, "KEV")
 	}

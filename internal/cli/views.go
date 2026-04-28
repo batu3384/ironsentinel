@@ -1687,7 +1687,7 @@ func (a *App) consoleDebriefFixPlanLines(run domain.ScanRun, findings []domain.F
 			if index == 0 && (finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret) {
 				priority = "P0"
 			}
-			summary := strings.TrimSpace(finding.Remediation)
+			summary := strings.TrimSpace(a.displayFindingRemediation(finding))
 			if summary == "" {
 				summary = a.catalog.T("scan_debrief_action_review")
 			}
@@ -1732,10 +1732,15 @@ func (a *App) consoleCampaignCreateCommand(run domain.ScanRun, findings []domain
 		}
 	}
 
+	title := "High-priority remediation"
+	if a.lang == i18n.TR {
+		title = "Yüksek öncelikli düzeltme"
+	}
 	return fmt.Sprintf(
-		`ironsentinel campaigns create --project %s --run %s --title "High-priority remediation" --finding %s`,
+		`ironsentinel campaigns create --project %s --run %s --title "%s" --finding %s`,
 		projectID,
 		runID,
+		title,
 		fingerprint,
 	)
 }
@@ -2346,7 +2351,7 @@ func (a *App) renderFindingDetails(finding domain.Finding) error {
 			)},
 			{Data: a.ptermSprintf("%s\n%s",
 				a.catalog.T("remediation"),
-				trimForSelect(coalesceString(finding.Remediation, "-"), 140),
+				trimForSelect(coalesceString(a.displayFindingRemediation(finding), "-"), 140),
 			)},
 			{Data: a.ptermSprintf("%s\n[cyan]%s[-]\n%s\n[cyan]%s[-]",
 				a.catalog.T("finding_operator_context_title"),
@@ -2557,7 +2562,7 @@ func (a *App) renderStreamEvent(event domain.StreamEvent) {
 	if !a.streamVerbose {
 		switch {
 		case event.Type == "finding.created" && event.Finding != nil:
-			pterm.Warning.Printf("%s\n", a.catalog.T("finding_detected", event.Finding.Title))
+			pterm.Warning.Printf("%s\n", a.catalog.T("finding_detected", a.displayFindingTitle(*event.Finding)))
 		case event.Type == "run.failed":
 			pterm.Error.Println(a.catalog.T("scan_failed"))
 		case event.Type == "run.canceled":
@@ -2584,7 +2589,7 @@ func (a *App) renderStreamEvent(event domain.StreamEvent) {
 	case event.Type == "module.execution" && event.Execution != nil:
 		a.renderModuleExecutionEvent(*event.Execution, event.Attempt)
 	case event.Type == "finding.created" && event.Finding != nil:
-		pterm.Warning.Printf("%s\n", a.catalog.T("finding_detected", event.Finding.Title))
+		pterm.Warning.Printf("%s\n", a.catalog.T("finding_detected", a.displayFindingTitle(*event.Finding)))
 	case event.Type == "run.completed":
 		pterm.Success.Println(a.catalog.T("scan_completed"))
 	case event.Type == "run.canceled":

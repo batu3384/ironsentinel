@@ -400,6 +400,62 @@ func TestWriteRunExportUsesOwnerOnlyPermissions(t *testing.T) {
 	}
 }
 
+func TestWriteRunExportUsesCurrentLanguageForHTMLReports(t *testing.T) {
+	app, run, _, _ := newFocusedRunFilterFixture(t)
+	app.lang = i18n.TR
+	app.catalog = i18n.New(i18n.TR)
+	output := filepath.Join(t.TempDir(), "report.html")
+
+	written, err := app.writeRunExport(run.ID, "html", output, "")
+	if err != nil {
+		t.Fatalf("write localized export: %v", err)
+	}
+	body, err := os.ReadFile(written)
+	if err != nil {
+		t.Fatalf("read localized export: %v", err)
+	}
+	report := string(body)
+	for _, forbidden := range []string{
+		"Operational decision",
+		"Remediation plan",
+		"Executive summary",
+		"Complete for selected profile",
+		"Failed -",
+		"High-priority remediation",
+		"Potential GitHub personal access token",
+		"KRITIK",
+		"3 bulgular",
+		"<td>secret</td>",
+		">unknown<",
+		" / </td>",
+		"Scanned local text files",
+		"Resolved workspace technology stacks",
+		"%!",
+	} {
+		if strings.Contains(report, forbidden) {
+			t.Fatalf("expected Turkish HTML report not to contain %q\n%s", forbidden, report)
+		}
+	}
+	for _, want := range []string{
+		"Operasyonel karar",
+		"Düzeltme planı",
+		"Yönetici özeti",
+		"GitHub kişisel erişim belirteci olasılığı",
+		"Yüksek öncelikli düzeltme",
+		"Şiddet",
+		"Başlık",
+		"KRİTİK",
+		"2 bulgu",
+		"Gizli bilgi",
+		"bilinmiyor",
+		"Yerel metin dosyaları yüksek güvenli gizli değer kalıpları için tarandı.",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("expected Turkish HTML report to contain %q\n%s", want, report)
+		}
+	}
+}
+
 func TestWriteRunExportAppliesEvidencePolicyToReportArtifacts(t *testing.T) {
 	app, run, _, _ := newFocusedRunFilterFixture(t)
 	app.cfg.ArtifactRedaction = true
@@ -558,7 +614,10 @@ func TestOverviewPlainReportTurkishLocalizesHeadlineAndDeduplicatesHotFindings(t
 	if !strings.Contains(report, "ÇALIŞIYOR") {
 		t.Fatalf("expected Turkish overview to localize recent run status\n%s", report)
 	}
-	if count := strings.Count(report, "Potential GitHub personal access token"); count != 1 {
+	if strings.Contains(report, "Potential GitHub personal access token") {
+		t.Fatalf("expected Turkish overview not to leak raw scanner title\n%s", report)
+	}
+	if count := strings.Count(report, "GitHub kişisel erişim belirteci olasılığı"); count != 1 {
 		t.Fatalf("expected duplicated hot findings to be compacted, saw %d copies\n%s", count, report)
 	}
 }

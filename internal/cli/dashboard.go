@@ -904,6 +904,11 @@ func (a *App) renderRuntimeSupportView(requested domain.CoverageProfile) error {
 }
 
 func (a *App) renderRuntimeDoctor(doctor domain.RuntimeDoctor) {
+	if a.shellSafeSurfaceOutput() {
+		fmt.Print(a.runtimeDoctorPlainReport(doctor))
+		return
+	}
+
 	passedChecks, warningChecks, failedChecks, skippedChecks := runtimeDoctorCheckCounts(doctor)
 	operatorFocus := a.catalog.T("runtime_focus_ready")
 	if !doctor.Ready {
@@ -1025,6 +1030,114 @@ func (a *App) renderRuntimeDoctor(doctor domain.RuntimeDoctor) {
 		pterm.Warning.Println(a.catalog.T("runtime_install_hint"))
 		pterm.Println(a.installCommandHint(string(doctor.Mode)))
 	}
+}
+
+func (a *App) runtimeDoctorPlainReport(doctor domain.RuntimeDoctor) string {
+	passedChecks, warningChecks, failedChecks, skippedChecks := runtimeDoctorCheckCounts(doctor)
+	operatorFocus := a.catalog.T("runtime_focus_ready")
+	if !doctor.Ready {
+		operatorFocus = a.catalog.T("runtime_focus_repair")
+	}
+	issueSummary := a.catalog.T("runtime_doctor_issue_none")
+	if !doctor.Ready {
+		issueSummary = a.summarizeDoctorIssues(doctor, 4)
+	}
+
+	lines := []string{
+		a.catalog.T("runtime_doctor_title"),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_launch"),
+			fmt.Sprintf("%s: %s", a.catalog.T("scan_mode"), strings.ToUpper(string(doctor.Mode))),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_doctor_strict_versions"), a.plainBooleanLabel(doctor.StrictVersions)),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_doctor_require_integrity"), a.plainBooleanLabel(doctor.RequireIntegrity)),
+			fmt.Sprintf("%s: %s", a.catalog.T("status"), a.displayUpper(ternary(doctor.Ready, a.statusText("available"), a.statusText("failed")))),
+		),
+		"",
+		renderPlainStage(a.catalog.T("console_stage_mission"),
+			fmt.Sprintf("%s: %d", a.catalog.T("runtime_doctor_required"), len(doctor.Required)),
+			fmt.Sprintf("%s: %d", a.catalog.T("runtime_doctor_missing"), len(doctor.Missing)),
+			fmt.Sprintf("%s: %d", a.catalog.T("runtime_doctor_outdated"), len(doctor.Outdated)),
+			fmt.Sprintf("%s: %d", a.catalog.T("runtime_doctor_verification_failed"), len(doctor.FailedVerification)+len(doctor.FailedAssets)),
+			fmt.Sprintf("%s: %d/%d/%d/%d", a.catalog.T("runtime_doctor_system_title"), passedChecks, warningChecks, failedChecks, skippedChecks),
+		),
+	}
+
+	for _, tool := range a.runtimeDoctorPlainTools(doctor) {
+		lines = append(lines, a.runtimeDoctorPlainToolLine(tool))
+	}
+	for _, check := range doctor.Checks {
+		detail := strings.TrimSpace(check.Summary)
+		if len(check.Details) > 0 {
+			detail = strings.Join(check.Details, " | ")
+		}
+		lines = append(lines, fmt.Sprintf("- %s | %s | %s", a.runtimeDoctorCheckLabel(check.Name), a.runtimeDoctorPlainCheckStatus(check.Status), coalesceString(detail, "-")))
+	}
+
+	lines = append(lines,
+		"",
+		renderPlainStage(a.catalog.T("console_stage_debrief"),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_operator_focus"), operatorFocus),
+			fmt.Sprintf("%s: %s", a.catalog.T("runtime_doctor_issue_summary"), issueSummary),
+			fmt.Sprintf("%s: %s", a.catalog.T("overview_next_steps"), a.installCommandHint(string(doctor.Mode))),
+		),
+		"",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func (a *App) runtimeDoctorPlainCheckStatus(status domain.RuntimeCheckStatus) string {
+	switch status {
+	case domain.RuntimeCheckPass:
+		return a.displayUpper(a.statusText("available"))
+	case domain.RuntimeCheckWarn:
+		return a.displayUpper(a.statusText("warning"))
+	case domain.RuntimeCheckFail:
+		return a.displayUpper(a.statusText("failed"))
+	default:
+		return a.displayUpper(a.statusText("skipped"))
+	}
+}
+
+func (a *App) runtimeDoctorPlainToolLine(tool domain.RuntimeTool) string {
+	return fmt.Sprintf(
+		"- %s | %s | %s -> %s",
+		tool.Name,
+		a.runtimeToolStateLabel(tool),
+		coalesceString(tool.ActualVersion, "-"),
+		coalesceString(tool.ExpectedVersion, "-"),
+	)
+}
+
+func (a *App) runtimeDoctorPlainTools(doctor domain.RuntimeDoctor) []domain.RuntimeTool {
+	seen := make(map[string]struct{}, len(doctor.Required)+len(doctor.Missing)+len(doctor.Outdated)+len(doctor.FailedVerification))
+	tools := make([]domain.RuntimeTool, 0, len(seen))
+	appendTool := func(tool domain.RuntimeTool) {
+		key := strings.TrimSpace(tool.Name)
+		if key == "" {
+			key = strings.TrimSpace(tool.Path)
+		}
+		if key == "" {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		tools = append(tools, tool)
+	}
+	for _, tool := range doctor.Required {
+		appendTool(tool)
+	}
+	for _, tool := range doctor.Missing {
+		appendTool(tool)
+	}
+	for _, tool := range doctor.Outdated {
+		appendTool(tool)
+	}
+	for _, tool := range doctor.FailedVerification {
+		appendTool(tool)
+	}
+	return tools
 }
 
 func (a *App) recommendNextStep(snapshot portfolioSnapshot) string {

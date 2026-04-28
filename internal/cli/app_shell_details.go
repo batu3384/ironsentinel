@@ -198,7 +198,7 @@ func (m appShellModel) renderFindingDetailContent(width int) string {
 				factPair{Label: m.app.catalog.T("confidence"), Value: fmt.Sprintf("%.2f", finding.Confidence)},
 			), coalesceString(strings.Join(finding.Compliance, ", "), "-"))...)...,
 		),
-		m.renderSection(m.app.catalog.T("remediation"), coalesceString(finding.Remediation, "-")),
+		m.renderSection(m.app.catalog.T("remediation"), coalesceString(m.app.displayFindingRemediation(finding), "-")),
 		m.renderSection(m.app.catalog.T("campaigns_title"),
 			m.campaignCreateCommandHint(finding.ProjectID, coalesceString(finding.ScanID, m.findingsScopeRun), finding.Fingerprint),
 			"ironsentinel campaigns publish-github <campaign-id> --repo owner/repo",

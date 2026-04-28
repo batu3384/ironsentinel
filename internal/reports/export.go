@@ -10,17 +10,23 @@ import (
 	"time"
 
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/findingtext"
+	"github.com/batu3384/ironsentinel/internal/i18n"
 	"github.com/batu3384/ironsentinel/internal/sbom"
 )
 
 func Export(format string, report domain.RunReport) (string, error) {
+	return ExportLocalized(format, report, i18n.EN)
+}
+
+func ExportLocalized(format string, report domain.RunReport, language i18n.Language) (string, error) {
 	switch strings.ToLower(format) {
 	case "sarif":
 		return exportSARIF(report)
 	case "csv":
 		return exportCSV(report)
 	case "html":
-		return exportHTML(report), nil
+		return exportHTML(report, language), nil
 	case "openvex":
 		return exportOpenVEX(report)
 	case "sbom-attestation":
@@ -278,7 +284,249 @@ func exportSBOMAttestation(report domain.RunReport) (string, error) {
 	return string(body), nil
 }
 
-func exportHTML(report domain.RunReport) string {
+type htmlReportText struct {
+	lang                  string
+	title                 string
+	run                   string
+	baseline              string
+	status                string
+	findings              string
+	severity              string
+	open                  string
+	investigating         string
+	acceptedRisk          string
+	falsePositive         string
+	fixed                 string
+	newFindings           string
+	existingFindings      string
+	resolved              string
+	failedModules         string
+	skippedModules        string
+	retriedModules        string
+	executiveSummary      string
+	severityOverview      string
+	runTrend              string
+	heatmap               string
+	operationalDecision   string
+	remediationPlan       string
+	complianceMapping     string
+	technicalDrilldown    string
+	scopeBlockers         string
+	execution             string
+	coverage              string
+	policy                string
+	runtime               string
+	validation            string
+	createCampaign        string
+	createCampaignBody    string
+	closeCoverageBlockers string
+	closeCoverageBody     string
+	keepWatching          string
+	keepWatchingBody      string
+	moduleExecution       string
+	resolvedFindings      string
+	none                  string
+	noFindingsRecorded    string
+	noComplianceMappings  string
+	completeCoverage      string
+	trustedRuntime        string
+	partialCoverageFormat string
+	degradedRuntime       string
+	policyPassed          string
+	policyFailedFormat    string
+	policyNeedsReviewFmt  string
+	priority              string
+	rule                  string
+	location              string
+	change                string
+	triage                string
+	category              string
+	module                string
+	reachability          string
+	cweCompliance         string
+	tagsOwner             string
+	attempts              string
+	duration              string
+	failure               string
+	timedOut              string
+	summary               string
+	controlMapping        string
+	findingCount          string
+	critical              string
+	high                  string
+	medium                string
+	low                   string
+	info                  string
+	remediation           string
+	attackChain           string
+	relatedFindings       string
+	reportTitle           string
+}
+
+func htmlText(language i18n.Language) htmlReportText {
+	if language == i18n.TR {
+		return htmlReportText{
+			lang:                  "tr",
+			title:                 "IronSentinel Uygulama Güvenliği Raporu",
+			run:                   "Koşu",
+			baseline:              "Referans",
+			status:                "Durum",
+			findings:              "Bulgular",
+			severity:              "Şiddet",
+			open:                  "Açık",
+			investigating:         "İncelemede",
+			acceptedRisk:          "Kabul edilmiş risk",
+			falsePositive:         "Yanlış pozitif",
+			fixed:                 "Düzeltildi",
+			newFindings:           "Yeni",
+			existingFindings:      "Mevcut",
+			resolved:              "Çözülen",
+			failedModules:         "Başarısız modüller",
+			skippedModules:        "Atlanan modüller",
+			retriedModules:        "Tekrarlanan modüller",
+			executiveSummary:      "Yönetici özeti",
+			severityOverview:      "Şiddet özeti",
+			runTrend:              "Koşu trendi",
+			heatmap:               "Isı haritası",
+			operationalDecision:   "Operasyonel karar",
+			remediationPlan:       "Düzeltme planı",
+			complianceMapping:     "Uyumluluk eşlemesi",
+			technicalDrilldown:    "Teknik detay",
+			scopeBlockers:         "Kapsam blokörleri",
+			execution:             "Çalıştırma",
+			coverage:              "Kapsam",
+			policy:                "Politika",
+			runtime:               "Çalışma zamanı",
+			validation:            "Doğrulama",
+			createCampaign:        "Düzeltme kampanyası oluştur",
+			createCampaignBody:    "Öne çıkan bulguları izlenebilir bir kampanyada gruplayın.",
+			closeCoverageBlockers: "Kapsam blokörlerini kapat",
+			closeCoverageBody:     "Bunlar tek başına güvenlik bulgusu değildir; ancak run güvenini azaltır.",
+			keepWatching:          "İzlemeye devam et",
+			keepWatchingBody:      "Düzeltme gerektiren bulgu yok. Anlamlı kod veya bağımlılık değişikliklerinden sonra tekrar tarayın.",
+			moduleExecution:       "Modül çalıştırma",
+			resolvedFindings:      "Çözülen bulgular",
+			none:                  "yok",
+			noFindingsRecorded:    "Bu koşuda bulgu kaydedilmedi.",
+			noComplianceMappings:  "Bu koşu için uyumluluk eşlemesi üretilmedi.",
+			completeCoverage:      "Seçili profil için tamamlandı",
+			trustedRuntime:        "Seçili profil için güvenilir",
+			partialCoverageFormat: "Kısmi kapsam - başarısız modül: %d, atlanan modül: %d",
+			degradedRuntime:       "Sınırlı - tam kapsama güvenmeden önce modül blokörlerini inceleyin",
+			policyPassed:          "Başarılı",
+			policyFailedFormat:    "Başarısız - %d kritik/yüksek bulgu aksiyon gerektiriyor",
+			policyNeedsReviewFmt:  "İnceleme gerekli - %d bulgu kaydedildi",
+			priority:              "Öncelik",
+			rule:                  "Kural",
+			location:              "Konum",
+			change:                "Değişim",
+			triage:                "Triage",
+			category:              "Kategori",
+			module:                "Modül",
+			reachability:          "Erişilebilirlik",
+			cweCompliance:         "CWE / Uyumluluk",
+			tagsOwner:             "Etiketler / Sahip",
+			attempts:              "Deneme",
+			duration:              "Süre",
+			failure:               "Hata",
+			timedOut:              "Zaman aşımı",
+			summary:               "Özet",
+			controlMapping:        "Kontrol eşlemesi",
+			findingCount:          "Bulgu sayısı",
+			critical:              "Kritik",
+			high:                  "Yüksek",
+			medium:                "Orta",
+			low:                   "Düşük",
+			info:                  "Bilgi",
+			remediation:           "Düzeltme",
+			attackChain:           "Saldırı zinciri",
+			relatedFindings:       "İlişkili bulgular",
+			reportTitle:           "Başlık",
+		}
+	}
+	return htmlReportText{
+		lang:                  "en",
+		title:                 "IronSentinel AppSec Report",
+		run:                   "Run",
+		baseline:              "Baseline",
+		status:                "Status",
+		findings:              "Findings",
+		severity:              "Severity",
+		open:                  "Open",
+		investigating:         "Investigating",
+		acceptedRisk:          "Accepted Risk",
+		falsePositive:         "False Positive",
+		fixed:                 "Fixed",
+		newFindings:           "New",
+		existingFindings:      "Existing",
+		resolved:              "Resolved",
+		failedModules:         "Failed modules",
+		skippedModules:        "Skipped modules",
+		retriedModules:        "Retried modules",
+		executiveSummary:      "Executive summary",
+		severityOverview:      "Severity overview",
+		runTrend:              "Run trend",
+		heatmap:               "Heatmap",
+		operationalDecision:   "Operational decision",
+		remediationPlan:       "Remediation plan",
+		complianceMapping:     "Compliance mapping",
+		technicalDrilldown:    "Technical drill-down",
+		scopeBlockers:         "Scope blockers",
+		execution:             "Execution",
+		coverage:              "Coverage",
+		policy:                "Policy",
+		runtime:               "Runtime",
+		validation:            "Validation",
+		createCampaign:        "Create remediation campaign",
+		createCampaignBody:    "Group the top findings into a trackable campaign.",
+		closeCoverageBlockers: "Close coverage blockers",
+		closeCoverageBody:     "These are not security findings by themselves, but they reduce trust in the run.",
+		keepWatching:          "Keep watching",
+		keepWatchingBody:      "No findings require remediation. Re-run after meaningful code or dependency changes.",
+		moduleExecution:       "Module execution",
+		resolvedFindings:      "Resolved findings",
+		none:                  "none",
+		noFindingsRecorded:    "No findings were recorded in this run.",
+		noComplianceMappings:  "No compliance mappings were generated for this run.",
+		completeCoverage:      "Complete for selected profile",
+		trustedRuntime:        "Trusted for selected profile",
+		partialCoverageFormat: "Partial coverage - failed modules: %d, skipped modules: %d",
+		degradedRuntime:       "Degraded - review module blockers before trusting full coverage",
+		policyPassed:          "Passed",
+		policyFailedFormat:    "Failed - %d critical/high findings require action",
+		policyNeedsReviewFmt:  "Needs review - %d findings recorded",
+		priority:              "Priority",
+		rule:                  "Rule",
+		location:              "Location",
+		change:                "Change",
+		triage:                "Triage",
+		category:              "Category",
+		module:                "Module",
+		reachability:          "Reachability",
+		cweCompliance:         "CWE / Compliance",
+		tagsOwner:             "Tags / Owner",
+		attempts:              "Attempts",
+		duration:              "Duration",
+		failure:               "Failure",
+		timedOut:              "Timed out",
+		summary:               "Summary",
+		controlMapping:        "Control mapping",
+		findingCount:          "Finding count",
+		critical:              "Critical",
+		high:                  "High",
+		medium:                "Medium",
+		low:                   "Low",
+		info:                  "Info",
+		remediation:           "Remediation",
+		attackChain:           "Attack chain",
+		relatedFindings:       "Related findings",
+		reportTitle:           "Title",
+	}
+}
+
+func exportHTML(report domain.RunReport, language i18n.Language) string {
+	labels := htmlText(language)
+	catalog := i18n.New(language)
 	findings := reportFindings(report)
 	changeByFingerprint := reportChangeIndex(report)
 	priorityFindings := append([]domain.Finding(nil), findings...)
@@ -299,21 +547,20 @@ func exportHTML(report domain.RunReport) string {
 			tagOwner += finding.Owner
 		}
 		rows = append(rows, fmt.Sprintf(
-			`<tr><td>%s</td><td>%s</td><td>%s</td><td>%.1f</td><td>%.2f</td><td>%t</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s / %s</td><td>%s</td></tr>`,
-			finding.Severity,
-			htmlEscape(string(DefaultChange(changeByFingerprint[finding.Fingerprint]))),
-			htmlEscape(string(DefaultStatus(finding.Status))),
+			`<tr><td>%s</td><td>%s</td><td>%s</td><td>%.1f</td><td>%.2f</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			htmlEscape(reportSeverityLabel(labels, finding.Severity)),
+			htmlEscape(reportChangeLabel(labels, DefaultChange(changeByFingerprint[finding.Fingerprint]))),
+			htmlEscape(reportStatusLabel(labels, DefaultStatus(finding.Status))),
 			finding.CVSS31,
 			finding.EPSSScore,
-			finding.KEV,
-			finding.Category,
+			htmlEscape(reportBoolLabel(labels, finding.KEV)),
+			htmlEscape(reportCategoryLabel(labels, finding.Category)),
 			finding.Module,
-			htmlEscape(finding.Reachability.String()),
+			htmlEscape(reportReachabilityLabel(catalog, finding.Reachability)),
 			htmlEscape(finding.RuleID),
-			htmlEscape(finding.Title),
+			htmlEscape(findingtext.Title(catalog, finding)),
 			htmlEscape(finding.Location),
-			htmlEscape(strings.Join(finding.CWEs, ", ")),
-			htmlEscape(strings.Join(finding.Compliance, ", ")),
+			htmlEscape(reportJoinedLists(labels, finding.CWEs, finding.Compliance)),
 			htmlEscape(tagOwner),
 		))
 	}
@@ -322,8 +569,8 @@ func exportHTML(report domain.RunReport) string {
 	for _, finding := range report.Delta.ResolvedFindings {
 		resolvedRows = append(resolvedRows, fmt.Sprintf(
 			`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			finding.Severity,
-			htmlEscape(finding.Title),
+			htmlEscape(reportSeverityLabel(labels, finding.Severity)),
+			htmlEscape(findingtext.Title(catalog, finding)),
 			htmlEscape(finding.Location),
 		))
 	}
@@ -331,31 +578,31 @@ func exportHTML(report domain.RunReport) string {
 	moduleRows := make([]string, 0, len(report.ModuleSummaries))
 	for _, module := range report.ModuleSummaries {
 		moduleRows = append(moduleRows, fmt.Sprintf(
-			`<tr><td>%s</td><td>%s</td><td>%d</td><td>%dms</td><td>%s</td><td>%t</td><td>%d</td><td>%s</td></tr>`,
+			`<tr><td>%s</td><td>%s</td><td>%d</td><td>%dms</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>`,
 			htmlEscape(module.Name),
-			htmlEscape(string(module.Status)),
+			htmlEscape(reportModuleStatusLabel(labels, module.Status)),
 			displayModuleSummaryAttempts(module),
 			module.DurationMs,
-			htmlEscape(defaultModuleFailure(module.FailureKind)),
-			module.TimedOut,
+			htmlEscape(reportModuleFailure(labels, module.FailureKind)),
+			htmlEscape(reportBoolLabel(labels, module.TimedOut)),
 			module.FindingCount,
-			htmlEscape(module.Summary),
+			htmlEscape(reportModuleSummary(catalog, module)),
 		))
 	}
 	moduleStats := report.ModuleStats
-	moduleSection := renderModuleSection(moduleRows)
-	executiveSummary := renderExecutiveSummary(priorityFindings)
-	operationalDecision := renderOperationalDecisionSection(report, findings)
-	remediationPlan := renderRemediationPlanSection(report, priorityFindings)
-	severityOverview := renderSeverityOverview(report.Run)
+	moduleSection := renderModuleSection(moduleRows, labels)
+	executiveSummary := renderExecutiveSummary(priorityFindings, labels, catalog)
+	operationalDecision := renderOperationalDecisionSection(report, findings, labels)
+	remediationPlan := renderRemediationPlanSection(report, priorityFindings, labels, catalog)
+	severityOverview := renderSeverityOverview(report.Run, labels)
 	trendChart := renderTrendChart(report.Run, report.Trends)
-	heatmap := renderHeatmap(findings)
-	complianceSection := renderComplianceSection(findings)
-	drilldown := renderFindingDrilldown(priorityFindings, changeByFingerprint)
-	resolvedSection := renderResolvedSection(resolvedRows)
+	heatmap := renderHeatmap(findings, labels)
+	complianceSection := renderComplianceSection(findings, labels)
+	drilldown := renderFindingDrilldown(priorityFindings, changeByFingerprint, labels, catalog)
+	resolvedSection := renderResolvedSection(resolvedRows, labels)
 
 	return fmt.Sprintf(`<!doctype html>
-<html lang="en">
+<html lang="%s">
 <head>
   <meta charset="utf-8" />
   <title>%s</title>
@@ -400,82 +647,118 @@ func exportHTML(report domain.RunReport) string {
   </style>
 </head>
 <body>
-  <h1>IronSentinel AppSec Report</h1>
-  <p class="meta">Run: %s</p>
-  <p class="meta">Baseline: %s</p>
-  <p class="meta">Status: %s | Findings: %d</p>
-  <p class="meta">Open: %d | Investigating: %d | Accepted Risk: %d | False Positive: %d | Fixed: %d</p>
-  <p class="meta">New: %d | Existing: %d | Resolved: %d</p>
-  <p class="meta">Failed modules: %d | Skipped modules: %d | Retried modules: %d</p>
+  <h1>%s</h1>
+  <p class="meta">%s: %s</p>
+  <p class="meta">%s: %s</p>
+  <p class="meta">%s: %s | %s: %d</p>
+  <p class="meta">%s: %d | %s: %d | %s: %d | %s: %d | %s: %d</p>
+  <p class="meta">%s: %d | %s: %d | %s: %d</p>
+  <p class="meta">%s: %d | %s: %d | %s: %d</p>
   <div class="grid">
     <section class="card">
-      <h2>Executive summary</h2>
+      <h2>%s</h2>
       %s
     </section>
     <section class="card">
-      <h2>Severity overview</h2>
+      <h2>%s</h2>
       %s
     </section>
     <section class="card">
-      <h2>Run trend</h2>
+      <h2>%s</h2>
       %s
     </section>
     <section class="card">
-      <h2>Heatmap</h2>
+      <h2>%s</h2>
       %s
     </section>
   </div>
   <section class="card" style="margin-top:24px;">
-    <h2>Operational decision</h2>
+    <h2>%s</h2>
     %s
   </section>
   <section class="card" style="margin-top:24px;">
-    <h2>Remediation plan</h2>
+    <h2>%s</h2>
     %s
   </section>
   <section class="card" style="margin-top:24px;">
-    <h2>Compliance mapping</h2>
+    <h2>%s</h2>
     %s
   </section>
   %s
   <table>
     <thead>
-      <tr><th>Severity</th><th>Change</th><th>Triage</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Category</th><th>Module</th><th>Reachability</th><th>Rule</th><th>Title</th><th>Location</th><th>CWE / Compliance</th><th>Tags / Owner</th></tr>
+      <tr><th>%s</th><th>%s</th><th>%s</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>
     </thead>
     <tbody>%s</tbody>
   </table>
   <section class="card" style="margin-top:24px;">
-    <h2>Technical drill-down</h2>
+    <h2>%s</h2>
     %s
   </section>
   %s
 </body>
 </html>`,
+		htmlEscape(labels.lang),
+		htmlEscape(labels.title),
+		htmlEscape(labels.title),
+		htmlEscape(labels.run),
 		htmlEscape(report.Run.ID),
-		htmlEscape(report.Run.ID),
-		htmlEscape(baselineID(report.Baseline)),
-		htmlEscape(string(report.Run.Status)),
+		htmlEscape(labels.baseline),
+		htmlEscape(reportBaselineID(report.Baseline, labels)),
+		htmlEscape(labels.status),
+		htmlEscape(reportRunStatusLabel(labels, report.Run.Status)),
+		htmlEscape(labels.findings),
 		len(findings),
+		htmlEscape(labels.open),
 		report.Run.Summary.CountsByStatus[domain.FindingOpen],
+		htmlEscape(labels.investigating),
 		report.Run.Summary.CountsByStatus[domain.FindingInvestigating],
+		htmlEscape(labels.acceptedRisk),
 		report.Run.Summary.CountsByStatus[domain.FindingAcceptedRisk],
+		htmlEscape(labels.falsePositive),
 		report.Run.Summary.CountsByStatus[domain.FindingFalsePositive],
+		htmlEscape(labels.fixed),
 		report.Run.Summary.CountsByStatus[domain.FindingFixed],
+		htmlEscape(labels.newFindings),
 		report.Delta.CountsByChange[domain.FindingNew],
+		htmlEscape(labels.existingFindings),
 		report.Delta.CountsByChange[domain.FindingExisting],
+		htmlEscape(labels.resolved),
 		report.Delta.CountsByChange[domain.FindingResolved],
+		htmlEscape(labels.failedModules),
 		moduleStats["failed"],
+		htmlEscape(labels.skippedModules),
 		moduleStats["skipped"],
+		htmlEscape(labels.retriedModules),
 		moduleStats["retried"],
+		htmlEscape(labels.executiveSummary),
 		executiveSummary,
+		htmlEscape(labels.severityOverview),
 		severityOverview,
+		htmlEscape(labels.runTrend),
 		trendChart,
+		htmlEscape(labels.heatmap),
 		heatmap,
+		htmlEscape(labels.operationalDecision),
 		operationalDecision,
+		htmlEscape(labels.remediationPlan),
 		remediationPlan,
+		htmlEscape(labels.complianceMapping),
 		complianceSection,
 		moduleSection,
+		htmlEscape(labels.severity),
+		htmlEscape(labels.change),
+		htmlEscape(labels.triage),
+		htmlEscape(labels.category),
+		htmlEscape(labels.module),
+		htmlEscape(labels.reachability),
+		htmlEscape(labels.rule),
+		htmlEscape(labels.reportTitle),
+		htmlEscape(labels.location),
+		htmlEscape(labels.cweCompliance),
+		htmlEscape(labels.tagsOwner),
 		strings.Join(rows, ""),
+		htmlEscape(labels.technicalDrilldown),
 		drilldown,
 		resolvedSection,
 	)
@@ -502,6 +785,13 @@ func baselineID(baseline *domain.ScanRun) string {
 	return baseline.ID
 }
 
+func reportBaselineID(baseline *domain.ScanRun, labels htmlReportText) string {
+	if baseline == nil {
+		return labels.none
+	}
+	return baseline.ID
+}
+
 func BuildChangeIndex(delta domain.RunDelta) map[string]domain.FindingChange {
 	index := make(map[string]domain.FindingChange, len(delta.NewFindings)+len(delta.ExistingFindings)+len(delta.ResolvedFindings))
 	for _, finding := range delta.NewFindings {
@@ -516,45 +806,45 @@ func BuildChangeIndex(delta domain.RunDelta) map[string]domain.FindingChange {
 	return index
 }
 
-func renderResolvedSection(rows []string) string {
+func renderResolvedSection(rows []string, labels htmlReportText) string {
 	if len(rows) == 0 {
 		return ""
 	}
-	return fmt.Sprintf(`<h2>Resolved findings</h2>
+	return fmt.Sprintf(`<h2>%s</h2>
   <table>
     <thead>
-      <tr><th>Severity</th><th>Title</th><th>Location</th></tr>
+      <tr><th>%s</th><th>%s</th><th>%s</th></tr>
     </thead>
     <tbody>%s</tbody>
-  </table>`, strings.Join(rows, ""))
+  </table>`, htmlEscape(labels.resolvedFindings), htmlEscape(labels.severity), htmlEscape(labels.reportTitle), htmlEscape(labels.location), strings.Join(rows, ""))
 }
 
-func renderOperationalDecisionSection(report domain.RunReport, findings []domain.Finding) string {
+func renderOperationalDecisionSection(report domain.RunReport, findings []domain.Finding, labels htmlReportText) string {
 	stats := ModuleExecutionStats(report.Run.ModuleResults)
 	critical := report.Run.Summary.CountsBySeverity[domain.SeverityCritical]
 	high := report.Run.Summary.CountsBySeverity[domain.SeverityHigh]
-	coverage := "Complete for selected profile"
-	runtime := "Trusted for selected profile"
+	coverage := labels.completeCoverage
+	runtime := labels.trustedRuntime
 	if stats["failed"] > 0 || stats["skipped"] > 0 {
-		coverage = fmt.Sprintf("Partial coverage - failed modules: %d, skipped modules: %d", stats["failed"], stats["skipped"])
-		runtime = "Degraded - review module blockers before trusting full coverage"
+		coverage = fmt.Sprintf(labels.partialCoverageFormat, stats["failed"], stats["skipped"])
+		runtime = labels.degradedRuntime
 	}
-	policy := "Passed"
+	policy := labels.policyPassed
 	switch {
 	case critical > 0 || high > 0:
-		policy = fmt.Sprintf("Failed - %d critical/high findings require action", critical+high)
+		policy = fmt.Sprintf(labels.policyFailedFormat, critical+high)
 	case len(findings) > 0:
-		policy = fmt.Sprintf("Needs review - %d findings recorded", len(findings))
+		policy = fmt.Sprintf(labels.policyNeedsReviewFmt, len(findings))
 	}
 	cards := []string{
-		renderDecisionCard("Execution", strings.ToUpper(string(report.Run.Status))),
-		renderDecisionCard("Coverage", coverage),
-		renderDecisionCard("Policy", policy),
-		renderDecisionCard("Runtime", runtime),
+		renderDecisionCard(labels.execution, reportRunStatusLabel(labels, report.Run.Status)),
+		renderDecisionCard(labels.coverage, coverage),
+		renderDecisionCard(labels.policy, policy),
+		renderDecisionCard(labels.runtime, runtime),
 	}
 	blockers := renderScopeBlockerList(report.Run.ModuleResults)
 	if blockers != "" {
-		cards = append(cards, `<div class="decision-card"><strong>Scope blockers</strong>`+blockers+`</div>`)
+		cards = append(cards, `<div class="decision-card"><strong>`+htmlEscape(labels.scopeBlockers)+`</strong>`+blockers+`</div>`)
 	}
 	return `<div class="decision-grid">` + strings.Join(cards, "") + `</div>`
 }
@@ -584,36 +874,40 @@ func renderScopeBlockerList(modules []domain.ModuleResult) string {
 	return `<ul>` + strings.Join(items, "") + `</ul>`
 }
 
-func renderRemediationPlanSection(report domain.RunReport, findings []domain.Finding) string {
+func renderRemediationPlanSection(report domain.RunReport, findings []domain.Finding, labels htmlReportText, catalog i18n.Catalog) string {
 	items := make([]string, 0, 4)
 	for index, finding := range findings[:min(2, len(findings))] {
 		priority := "P1"
 		if index == 0 && (finding.Severity == domain.SeverityCritical || finding.Severity == domain.SeverityHigh || finding.Category == domain.CategorySecret) {
 			priority = "P0"
 		}
-		remediation := strings.TrimSpace(finding.Remediation)
+		remediation := strings.TrimSpace(findingtext.Remediation(catalog, finding))
 		if remediation == "" {
-			remediation = "Review and remediate the finding from its source module."
+			remediation = labels.keepWatchingBody
 		}
 		items = append(items, fmt.Sprintf(
-			`<div class="plan-item"><b>%s</b> %s<p>%s</p><p><strong>Validation:</strong> <code>%s</code></p></div>`,
+			`<div class="plan-item"><b>%s</b> %s<p>%s</p><p><strong>%s:</strong> <code>%s</code></p></div>`,
 			htmlEscape(priority),
-			htmlEscape(finding.Title),
+			htmlEscape(findingtext.Title(catalog, finding)),
 			htmlEscape(remediation),
+			htmlEscape(labels.validation),
 			htmlEscape(reportValidationCommand(report.Run, finding)),
 		))
 	}
 	if len(findings) > 0 {
 		items = append(items, fmt.Sprintf(
-			`<div class="plan-item"><b>P1</b> Create remediation campaign<p>Group the top findings into a trackable campaign.</p><p><strong>Validation:</strong> <code>%s</code></p></div>`,
-			htmlEscape(reportCampaignCreateCommand(report.Run, findings)),
+			`<div class="plan-item"><b>P1</b> %s<p>%s</p><p><strong>%s:</strong> <code>%s</code></p></div>`,
+			htmlEscape(labels.createCampaign),
+			htmlEscape(labels.createCampaignBody),
+			htmlEscape(labels.validation),
+			htmlEscape(reportCampaignCreateCommand(report.Run, findings, labels)),
 		))
 	}
 	if blockers := renderScopeBlockerList(report.Run.ModuleResults); blockers != "" {
-		items = append(items, `<div class="plan-item"><b>P2</b> Close coverage blockers<p>These are not security findings by themselves, but they reduce trust in the run.</p>`+blockers+`<p><strong>Validation:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
+		items = append(items, `<div class="plan-item"><b>P2</b> `+htmlEscape(labels.closeCoverageBlockers)+`<p>`+htmlEscape(labels.closeCoverageBody)+`</p>`+blockers+`<p><strong>`+htmlEscape(labels.validation)+`:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
 	}
 	if len(items) == 0 {
-		items = append(items, `<div class="plan-item"><b>P2</b> Keep watching<p>No findings require remediation. Re-run after meaningful code or dependency changes.</p><p><strong>Validation:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
+		items = append(items, `<div class="plan-item"><b>P2</b> `+htmlEscape(labels.keepWatching)+`<p>`+htmlEscape(labels.keepWatchingBody)+`</p><p><strong>`+htmlEscape(labels.validation)+`:</strong> <code>ironsentinel scan . --strict</code></p></div>`)
 	}
 	return `<div class="plan-list">` + strings.Join(items, "") + `</div>`
 }
@@ -629,7 +923,7 @@ func reportValidationCommand(run domain.ScanRun, finding domain.Finding) string 
 	return "ironsentinel scan . --strict"
 }
 
-func reportCampaignCreateCommand(run domain.ScanRun, findings []domain.Finding) string {
+func reportCampaignCreateCommand(run domain.ScanRun, findings []domain.Finding, labels htmlReportText) string {
 	projectID := strings.TrimSpace(run.ProjectID)
 	if projectID == "" {
 		projectID = "<project-id>"
@@ -645,27 +939,38 @@ func reportCampaignCreateCommand(run domain.ScanRun, findings []domain.Finding) 
 			break
 		}
 	}
+	title := "High-priority remediation"
+	if labels.lang == "tr" {
+		title = "Yüksek öncelikli düzeltme"
+	}
 	return fmt.Sprintf(
-		`ironsentinel campaigns create --project %s --run %s --title "High-priority remediation" --finding %s`,
+		`ironsentinel campaigns create --project %s --run %s --title "%s" --finding %s`,
 		projectID,
 		runID,
+		title,
 		fingerprint,
 	)
 }
 
-func renderExecutiveSummary(findings []domain.Finding) string {
+func renderExecutiveSummary(findings []domain.Finding, labels htmlReportText, catalog i18n.Catalog) string {
 	if len(findings) == 0 {
-		return `<p>No findings were recorded in this run.</p>`
+		return `<p>` + htmlEscape(labels.noFindingsRecorded) + `</p>`
 	}
 	top := findings[:min(3, len(findings))]
 	items := make([]string, 0, len(top))
 	for _, finding := range top {
-		items = append(items, fmt.Sprintf(`<li><strong>%s</strong> (%s, priority %.1f)</li>`, htmlEscape(finding.Title), htmlEscape(string(finding.Severity)), finding.Priority))
+		items = append(items, fmt.Sprintf(
+			`<li><strong>%s</strong> (%s, %s %.1f)</li>`,
+			htmlEscape(findingtext.Title(catalog, finding)),
+			htmlEscape(reportSeverityLabel(labels, finding.Severity)),
+			htmlEscape(labels.priority),
+			finding.Priority,
+		))
 	}
-	return fmt.Sprintf(`<p class="big">%d findings</p><ul>%s</ul>`, len(findings), strings.Join(items, ""))
+	return fmt.Sprintf(`<p class="big">%s</p><ul>%s</ul>`, htmlEscape(reportFindingCountLabel(labels, len(findings))), strings.Join(items, ""))
 }
 
-func renderSeverityOverview(run domain.ScanRun) string {
+func renderSeverityOverview(run domain.ScanRun, labels htmlReportText) string {
 	critical := run.Summary.CountsBySeverity[domain.SeverityCritical]
 	high := run.Summary.CountsBySeverity[domain.SeverityHigh]
 	medium := run.Summary.CountsBySeverity[domain.SeverityMedium]
@@ -688,11 +993,11 @@ func renderSeverityOverview(run domain.ScanRun) string {
 		float64(critical+high+medium+low)/float64(total)*100,
 	)
 	legendRows := []string{
-		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ff4d6d;"></span>Critical</span><strong>%d</strong></div>`, critical),
-		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ff8c42;"></span>High</span><strong>%d</strong></div>`, high),
-		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ffd166;"></span>Medium</span><strong>%d</strong></div>`, medium),
-		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#5eead4;"></span>Low</span><strong>%d</strong></div>`, low),
-		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#7dd3fc;"></span>Info</span><strong>%d</strong></div>`, info),
+		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ff4d6d;"></span>%s</span><strong>%d</strong></div>`, htmlEscape(labels.critical), critical),
+		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ff8c42;"></span>%s</span><strong>%d</strong></div>`, htmlEscape(labels.high), high),
+		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#ffd166;"></span>%s</span><strong>%d</strong></div>`, htmlEscape(labels.medium), medium),
+		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#5eead4;"></span>%s</span><strong>%d</strong></div>`, htmlEscape(labels.low), low),
+		fmt.Sprintf(`<div class="legend-row"><span><span class="swatch" style="background:#7dd3fc;"></span>%s</span><strong>%d</strong></div>`, htmlEscape(labels.info), info),
 	}
 	return fmt.Sprintf(`<div class="pie" style="background:%s;"></div><div class="legend">%s</div>`, pie, strings.Join(legendRows, ""))
 }
@@ -733,9 +1038,9 @@ func renderTrendChart(run domain.ScanRun, trends []domain.RunTrendPoint) string 
 	return `<div class="timeline">` + strings.Join(bars, "") + `</div>`
 }
 
-func renderHeatmap(findings []domain.Finding) string {
+func renderHeatmap(findings []domain.Finding, labels htmlReportText) string {
 	if len(findings) == 0 {
-		return `<p>No findings were recorded in this run.</p>`
+		return `<p>` + htmlEscape(labels.noFindingsRecorded) + `</p>`
 	}
 	categories := []domain.FindingCategory{domain.CategorySAST, domain.CategorySCA, domain.CategoryIaC, domain.CategoryContainer, domain.CategoryDAST, domain.CategorySecret, domain.CategoryMalware, domain.CategoryCompliance}
 	severities := []domain.Severity{domain.SeverityCritical, domain.SeverityHigh, domain.SeverityMedium, domain.SeverityLow}
@@ -748,7 +1053,7 @@ func renderHeatmap(findings []domain.Finding) string {
 			maxCount = counts[key]
 		}
 	}
-	rows := []string{`<div class="heat-row"><strong>Category</strong><strong>Critical</strong><strong>High</strong><strong>Medium</strong><strong>Low</strong></div>`}
+	rows := []string{fmt.Sprintf(`<div class="heat-row"><strong>%s</strong><strong>%s</strong><strong>%s</strong><strong>%s</strong><strong>%s</strong></div>`, htmlEscape(labels.category), htmlEscape(labels.critical), htmlEscape(labels.high), htmlEscape(labels.medium), htmlEscape(labels.low))}
 	for _, category := range categories {
 		cells := []string{fmt.Sprintf(`<div><strong>%s</strong></div>`, htmlEscape(string(category)))}
 		for _, severity := range severities {
@@ -773,7 +1078,7 @@ func renderHeatmap(findings []domain.Finding) string {
 	return `<div class="heatmap">` + strings.Join(rows, "") + `</div>`
 }
 
-func renderComplianceSection(findings []domain.Finding) string {
+func renderComplianceSection(findings []domain.Finding, labels htmlReportText) string {
 	index := make(map[string]int)
 	for _, finding := range findings {
 		for _, mapping := range finding.Compliance {
@@ -781,7 +1086,7 @@ func renderComplianceSection(findings []domain.Finding) string {
 		}
 	}
 	if len(index) == 0 {
-		return `<p>No compliance mappings were generated for this run.</p>`
+		return `<p>` + htmlEscape(labels.noComplianceMappings) + `</p>`
 	}
 	keys := make([]string, 0, len(index))
 	for key := range index {
@@ -792,54 +1097,362 @@ func renderComplianceSection(findings []domain.Finding) string {
 	for _, key := range keys {
 		rows = append(rows, fmt.Sprintf(`<tr><td>%s</td><td>%d</td></tr>`, htmlEscape(key), index[key]))
 	}
-	return `<table><thead><tr><th>Control mapping</th><th>Finding count</th></tr></thead><tbody>` + strings.Join(rows, "") + `</tbody></table>`
+	return `<table><thead><tr><th>` + htmlEscape(labels.controlMapping) + `</th><th>` + htmlEscape(labels.findingCount) + `</th></tr></thead><tbody>` + strings.Join(rows, "") + `</tbody></table>`
 }
 
-func renderFindingDrilldown(findings []domain.Finding, changeByFingerprint map[string]domain.FindingChange) string {
+func renderFindingDrilldown(findings []domain.Finding, changeByFingerprint map[string]domain.FindingChange, labels htmlReportText, catalog i18n.Catalog) string {
 	if len(findings) == 0 {
-		return `<p>No findings were recorded in this run.</p>`
+		return `<p>` + htmlEscape(labels.noFindingsRecorded) + `</p>`
 	}
 	cards := make([]string, 0, len(findings))
 	for _, finding := range findings {
 		cards = append(cards, fmt.Sprintf(
-			`<details class="finding-card"><summary><span class="badge sev-%s">%s</span>%s</summary><p><strong>Rule:</strong> %s</p><p><strong>Location:</strong> %s</p><p><strong>CVSS:</strong> %.1f / %.1f | <strong>EPSS:</strong> %.2f | <strong>Priority:</strong> %.1f | <strong>Change:</strong> %s</p><p><strong>CWE:</strong> %s</p><p><strong>Compliance:</strong> %s</p><p><strong>Remediation:</strong> %s</p>%s</details>`,
+			`<details class="finding-card"><summary><span class="badge sev-%s">%s</span>%s</summary><p><strong>%s:</strong> %s</p><p><strong>%s:</strong> %s</p><p><strong>CVSS:</strong> %.1f / %.1f | <strong>EPSS:</strong> %.2f | <strong>%s:</strong> %.1f | <strong>%s:</strong> %s</p><p><strong>CWE:</strong> %s</p><p><strong>%s:</strong> %s</p><p><strong>%s:</strong> %s</p>%s</details>`,
 			htmlEscape(string(finding.Severity)),
-			htmlEscape(strings.ToUpper(string(finding.Severity))),
-			htmlEscape(finding.Title),
+			htmlEscape(reportSeverityBadgeLabel(labels, finding.Severity)),
+			htmlEscape(findingtext.Title(catalog, finding)),
+			htmlEscape(labels.rule),
 			htmlEscape(finding.RuleID),
+			htmlEscape(labels.location),
 			htmlEscape(finding.Location),
 			finding.CVSS31,
 			finding.CVSS40,
 			finding.EPSSScore,
+			htmlEscape(labels.priority),
 			finding.Priority,
-			htmlEscape(string(DefaultChange(changeByFingerprint[finding.Fingerprint]))),
-			htmlEscape(strings.Join(finding.CWEs, ", ")),
-			htmlEscape(strings.Join(finding.Compliance, ", ")),
-			htmlEscape(finding.Remediation),
-			renderAttackChainDetail(finding),
+			htmlEscape(labels.change),
+			htmlEscape(reportChangeLabel(labels, DefaultChange(changeByFingerprint[finding.Fingerprint]))),
+			htmlEscape(reportJoinedStrings(labels, finding.CWEs)),
+			htmlEscape(labels.cweCompliance),
+			htmlEscape(reportJoinedStrings(labels, finding.Compliance)),
+			htmlEscape(labels.remediation),
+			htmlEscape(findingtext.Remediation(catalog, finding)),
+			renderAttackChainDetail(finding, labels),
 		))
 	}
 	return strings.Join(cards, "")
 }
 
-func renderAttackChainDetail(finding domain.Finding) string {
+func renderAttackChainDetail(finding domain.Finding, labels htmlReportText) string {
 	if strings.TrimSpace(finding.AttackChain) == "" {
 		return ""
 	}
-	return fmt.Sprintf(`<p><strong>Attack chain:</strong> %s</p><p><strong>Related findings:</strong> %s</p>`, htmlEscape(finding.AttackChain), htmlEscape(strings.Join(finding.Related, ", ")))
+	return fmt.Sprintf(`<p><strong>%s:</strong> %s</p><p><strong>%s:</strong> %s</p>`, htmlEscape(labels.attackChain), htmlEscape(finding.AttackChain), htmlEscape(labels.relatedFindings), htmlEscape(strings.Join(finding.Related, ", ")))
 }
 
-func renderModuleSection(rows []string) string {
+func renderModuleSection(rows []string, labels htmlReportText) string {
 	if len(rows) == 0 {
 		return ""
 	}
-	return fmt.Sprintf(`<h2>Module execution</h2>
+	return fmt.Sprintf(`<h2>%s</h2>
   <table>
     <thead>
-      <tr><th>Module</th><th>Status</th><th>Attempts</th><th>Duration</th><th>Failure</th><th>Timed out</th><th>Findings</th><th>Summary</th></tr>
+      <tr><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>
     </thead>
     <tbody>%s</tbody>
-  </table>`, strings.Join(rows, ""))
+  </table>`, htmlEscape(labels.moduleExecution), htmlEscape(labels.module), htmlEscape(labels.status), htmlEscape(labels.attempts), htmlEscape(labels.duration), htmlEscape(labels.failure), htmlEscape(labels.timedOut), htmlEscape(labels.findings), htmlEscape(labels.summary), strings.Join(rows, ""))
+}
+
+func reportSeverityLabel(labels htmlReportText, severity domain.Severity) string {
+	switch severity {
+	case domain.SeverityCritical:
+		return labels.critical
+	case domain.SeverityHigh:
+		return labels.high
+	case domain.SeverityMedium:
+		return labels.medium
+	case domain.SeverityLow:
+		return labels.low
+	case domain.SeverityInfo:
+		return labels.info
+	default:
+		return string(severity)
+	}
+}
+
+func reportSeverityBadgeLabel(labels htmlReportText, severity domain.Severity) string {
+	if labels.lang != "tr" {
+		return strings.ToUpper(string(severity))
+	}
+	switch severity {
+	case domain.SeverityCritical:
+		return "KRİTİK"
+	case domain.SeverityHigh:
+		return "YÜKSEK"
+	case domain.SeverityMedium:
+		return "ORTA"
+	case domain.SeverityLow:
+		return "DÜŞÜK"
+	case domain.SeverityInfo:
+		return "BİLGİ"
+	default:
+		return strings.ToUpper(string(severity))
+	}
+}
+
+func reportCategoryLabel(labels htmlReportText, category domain.FindingCategory) string {
+	if labels.lang != "tr" {
+		switch category {
+		case domain.CategorySecret:
+			return "Secret"
+		case domain.CategoryMalware:
+			return "Malware"
+		case domain.CategoryMaintainability:
+			return "Maintainability"
+		case domain.CategoryPlatform:
+			return "Platform"
+		case domain.CategorySCA:
+			return "SCA"
+		case domain.CategoryIaC:
+			return "IaC"
+		case domain.CategoryContainer:
+			return "Container"
+		case domain.CategoryDAST:
+			return "DAST"
+		case domain.CategoryCompliance:
+			return "Compliance"
+		default:
+			return "SAST"
+		}
+	}
+	switch category {
+	case domain.CategorySecret:
+		return "Gizli bilgi"
+	case domain.CategoryMalware:
+		return "Zararlı yazılım"
+	case domain.CategoryMaintainability:
+		return "Bakım"
+	case domain.CategoryPlatform:
+		return "Platform"
+	case domain.CategorySCA:
+		return "Bağımlılık"
+	case domain.CategoryIaC:
+		return "Altyapı"
+	case domain.CategoryContainer:
+		return "Konteyner"
+	case domain.CategoryDAST:
+		return "Dinamik"
+	case domain.CategoryCompliance:
+		return "Uyumluluk"
+	default:
+		return "Statik analiz"
+	}
+}
+
+func reportReachabilityLabel(catalog i18n.Catalog, value domain.Reachability) string {
+	switch domain.NormalizeReachability(value.String()) {
+	case domain.ReachabilityReachable:
+		return catalog.T("finding_reachability_reachable")
+	case domain.ReachabilityPossible:
+		return catalog.T("finding_reachability_possible")
+	case domain.ReachabilityUnknown:
+		return catalog.T("finding_reachability_unknown")
+	case domain.ReachabilityRepository:
+		return catalog.T("finding_reachability_repository")
+	case domain.ReachabilityImage:
+		return catalog.T("finding_reachability_image")
+	case domain.ReachabilityInfrastructure:
+		return catalog.T("finding_reachability_infrastructure")
+	case domain.ReachabilityExecutionSurface:
+		return catalog.T("finding_reachability_execution_surface")
+	case domain.ReachabilityNotApplicable:
+		return catalog.T("finding_reachability_not_applicable")
+	default:
+		return value.String()
+	}
+}
+
+func reportChangeLabel(labels htmlReportText, change domain.FindingChange) string {
+	switch change {
+	case domain.FindingNew:
+		return labels.newFindings
+	case domain.FindingExisting:
+		return labels.existingFindings
+	case domain.FindingResolved:
+		return labels.resolved
+	default:
+		return string(change)
+	}
+}
+
+func reportStatusLabel(labels htmlReportText, status domain.FindingStatus) string {
+	switch status {
+	case domain.FindingOpen:
+		return labels.open
+	case domain.FindingInvestigating:
+		return labels.investigating
+	case domain.FindingAcceptedRisk:
+		return labels.acceptedRisk
+	case domain.FindingFalsePositive:
+		return labels.falsePositive
+	case domain.FindingFixed:
+		return labels.fixed
+	default:
+		return string(status)
+	}
+}
+
+func reportModuleStatusLabel(labels htmlReportText, status domain.ModuleStatus) string {
+	if labels.lang != "tr" {
+		return strings.ToUpper(string(status))
+	}
+	switch status {
+	case domain.ModuleQueued:
+		return "KUYRUKTA"
+	case domain.ModuleRunning:
+		return "ÇALIŞIYOR"
+	case domain.ModuleCompleted:
+		return "TAMAMLANDI"
+	case domain.ModuleFailed:
+		return "BAŞARISIZ"
+	case domain.ModuleSkipped:
+		return "ATLANDI"
+	default:
+		return strings.ToUpper(string(status))
+	}
+}
+
+func reportModuleFailure(labels htmlReportText, kind domain.ModuleFailureKind) string {
+	if kind == "" {
+		return labels.none
+	}
+	return string(kind)
+}
+
+func reportModuleSummary(catalog i18n.Catalog, module domain.RunReportModuleSummary) string {
+	switch module.Name {
+	case "stack-detector":
+		return catalog.T("report_module_summary_stack_detector")
+	case "surface-inventory":
+		return catalog.T("report_module_summary_surface_inventory")
+	case "script-audit":
+		return catalog.T("report_module_summary_script_audit")
+	case "dependency-confusion":
+		return catalog.T("report_module_summary_dependency_confusion")
+	case "runtime-config-audit":
+		return catalog.T("report_module_summary_runtime_config_audit")
+	case "binary-entropy":
+		return catalog.T("report_module_summary_binary_entropy")
+	case "secret-heuristics":
+		return catalog.T("report_module_summary_secret_heuristics")
+	case "malware-signature":
+		return catalog.T("report_module_summary_malware_signature")
+	case "semgrep":
+		return catalog.T("report_module_summary_semgrep", module.FindingCount)
+	case "gitleaks":
+		return catalog.T("report_module_summary_gitleaks", module.FindingCount)
+	case "trivy":
+		return catalog.T("report_module_summary_trivy", module.FindingCount)
+	case "trivy-image":
+		return catalog.T("report_module_summary_trivy_image", module.FindingCount)
+	case "syft":
+		return catalog.T("report_module_summary_syft")
+	case "grype":
+		return catalog.T("report_module_summary_grype", module.FindingCount)
+	case "osv-scanner":
+		return catalog.T("report_module_summary_osv_scanner", module.FindingCount)
+	case "checkov":
+		return catalog.T("report_module_summary_checkov", module.FindingCount)
+	case "tfsec":
+		return catalog.T("report_module_summary_tfsec", module.FindingCount)
+	case "kics":
+		return catalog.T("report_module_summary_kics", module.FindingCount)
+	case "licensee":
+		return catalog.T("report_module_summary_licensee", module.FindingCount)
+	case "scancode":
+		return catalog.T("report_module_summary_scancode", module.FindingCount)
+	case "govulncheck":
+		return catalog.T("report_module_summary_govulncheck", module.FindingCount)
+	case "staticcheck":
+		return catalog.T("report_module_summary_staticcheck", module.FindingCount)
+	case "knip":
+		return catalog.T("report_module_summary_knip", module.FindingCount)
+	case "vulture":
+		return catalog.T("report_module_summary_vulture", module.FindingCount)
+	case "clamscan":
+		return catalog.T("report_module_summary_clamscan", module.FindingCount)
+	case "yara-x":
+		return catalog.T("report_module_summary_yara_x", module.FindingCount)
+	case "codeql":
+		return catalog.T("report_module_summary_codeql", module.FindingCount)
+	case "nuclei":
+		return catalog.T("report_module_summary_nuclei", module.FindingCount)
+	case "zaproxy":
+		return catalog.T("report_module_summary_zaproxy", module.FindingCount)
+	default:
+		return module.Summary
+	}
+}
+
+func reportBoolLabel(labels htmlReportText, value bool) string {
+	if labels.lang != "tr" {
+		if value {
+			return "true"
+		}
+		return "false"
+	}
+	if value {
+		return "evet"
+	}
+	return "hayır"
+}
+
+func reportRunStatusLabel(labels htmlReportText, status domain.ScanStatus) string {
+	if labels.lang != "tr" {
+		return strings.ToUpper(string(status))
+	}
+	switch status {
+	case domain.ScanQueued:
+		return "KUYRUKTA"
+	case domain.ScanRunning:
+		return "ÇALIŞIYOR"
+	case domain.ScanCompleted:
+		return "TAMAMLANDI"
+	case domain.ScanFailed:
+		return "BAŞARISIZ"
+	case domain.ScanCanceled:
+		return "İPTAL EDİLDİ"
+	default:
+		return strings.ToUpper(string(status))
+	}
+}
+
+func reportJoinedLists(labels htmlReportText, left, right []string) string {
+	leftText := reportJoinedStrings(labels, left)
+	rightText := reportJoinedStrings(labels, right)
+	if leftText == labels.none && rightText == labels.none {
+		return labels.none
+	}
+	if leftText == labels.none {
+		return rightText
+	}
+	if rightText == labels.none {
+		return leftText
+	}
+	return leftText + " / " + rightText
+}
+
+func reportJoinedStrings(labels htmlReportText, values []string) string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	if len(filtered) == 0 {
+		return labels.none
+	}
+	return strings.Join(filtered, ", ")
+}
+
+func reportFindingCountLabel(labels htmlReportText, count int) string {
+	if labels.lang == "tr" {
+		return fmt.Sprintf("%d bulgu", count)
+	}
+	if count == 1 {
+		return "1 finding"
+	}
+	return fmt.Sprintf("%d findings", count)
 }
 
 func ModuleExecutionStats(modules []domain.ModuleResult) map[string]int {
@@ -897,13 +1510,6 @@ func displayModuleSummaryAttempts(module domain.RunReportModuleSummary) int {
 		return 0
 	}
 	return 1
-}
-
-func defaultModuleFailure(kind domain.ModuleFailureKind) string {
-	if kind == "" {
-		return "-"
-	}
-	return string(kind)
 }
 
 func htmlEscape(value string) string {

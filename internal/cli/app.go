@@ -1588,7 +1588,7 @@ func (a *App) exportRun(runID, format, output, baselineRunID string) error {
 
 func (a *App) exportRunWithVEX(runID, format, output, baselineRunID, vexPath string) error {
 	if output == "" {
-		content, err := a.service.ExportWithVEX(runID, format, baselineRunID, vexPath)
+		content, err := a.service.ExportWithVEXAndLanguage(runID, format, baselineRunID, vexPath, a.lang)
 		if err != nil {
 			return err
 		}
@@ -2371,7 +2371,7 @@ func (a *App) writeRunExport(runID, format, output, baselineRunID string) (strin
 }
 
 func (a *App) writeRunExportWithVEX(runID, format, output, baselineRunID, vexPath string) (string, error) {
-	content, err := a.service.ExportWithVEX(runID, format, baselineRunID, vexPath)
+	content, err := a.service.ExportWithVEXAndLanguage(runID, format, baselineRunID, vexPath, a.lang)
 	if err != nil {
 		return "", err
 	}

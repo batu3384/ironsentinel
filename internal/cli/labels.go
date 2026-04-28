@@ -9,6 +9,7 @@ import (
 	"github.com/pterm/pterm"
 
 	"github.com/batu3384/ironsentinel/internal/domain"
+	"github.com/batu3384/ironsentinel/internal/findingtext"
 	"github.com/batu3384/ironsentinel/internal/i18n"
 )
 
@@ -321,7 +322,7 @@ func (a *App) findingStatusLabel(status domain.FindingStatus) string {
 }
 
 func (a *App) displayFindingTitle(finding domain.Finding) string {
-	title := strings.TrimSpace(finding.Title)
+	title := findingtext.Title(a.catalog, finding)
 	if a.lang != i18n.TR || title == "" {
 		return title
 	}
@@ -357,6 +358,10 @@ func (a *App) displayFindingTitle(finding domain.Finding) string {
 	default:
 		return title
 	}
+}
+
+func (a *App) displayFindingRemediation(finding domain.Finding) string {
+	return findingtext.Remediation(a.catalog, finding)
 }
 
 func (a *App) moduleNarrative(module string) string {
